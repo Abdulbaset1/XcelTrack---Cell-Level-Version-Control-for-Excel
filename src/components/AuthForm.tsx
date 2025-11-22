@@ -1,39 +1,75 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import Login from '../pages/Login';
 import Signup from '../pages/Signup';
 
 const AuthForm: React.FC = () => {
-  const [isLogin, setIsLogin] = useState(true);
+  const location = useLocation();
+  const isLoginPage = location.pathname === '/login';
+  const [isRightPanelActive, setIsRightPanelActive] = useState(!isLoginPage);
+
+  const handleSignUpClick = () => {
+    setIsRightPanelActive(true);
+  };
+
+  const handleSignInClick = () => {
+    setIsRightPanelActive(false);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center p-4">
-      <div className="relative w-full max-w-md">
-        {/* Sliding Forms Container */}
-        <div className="relative overflow-hidden bg-white rounded-2xl shadow-2xl">
-          <div className={`flex transition-transform duration-500 ease-in-out ${
-            isLogin ? 'translate-x-0' : '-translate-x-1/2'
-          }`} style={{ width: '200%' }}>
-            
-            {/* Login Form - Takes first half */}
-            <div className="w-1/2 px-8 py-10">
-              <Login onSwitchToSignup={() => setIsLogin(false)} />
-            </div>
-            
-            {/* Signup Form - Takes second half */}
-            <div className="w-1/2 px-8 py-10">
-              <Signup onSwitchToLogin={() => setIsLogin(true)} />
-            </div>
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
+      <div 
+        className={`bg-white rounded-2xl shadow-2xl relative overflow-hidden w-full max-w-4xl min-h-[600px] ${
+          isRightPanelActive ? 'right-panel-active' : ''
+        }`}
+        id="container"
+      >
+        {/* Sign Up Container */}
+        <div className="absolute top-0 h-full w-1/2 opacity-0 z-10 transition-all duration-600 ease-in-out left-0 sign-up-container">
+          <div className="bg-white flex items-center justify-center flex-col h-full px-16 text-center">
+            <Signup onSwitchToLogin={handleSignInClick} />
           </div>
         </div>
 
-        {/* Toggle Switch */}
-        <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2">
-          <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="bg-white text-blue-600 px-6 py-2 rounded-full shadow-lg font-semibold hover:bg-gray-50 transition-colors"
-          >
-            {isLogin ? 'Create Account' : 'Already have account?'}
-          </button>
+        {/* Sign In Container */}
+        <div className="absolute top-0 h-full w-1/2 left-0 z-20 transition-all duration-600 ease-in-out sign-in-container">
+          <div className="bg-white flex items-center justify-center flex-col h-full px-16 text-center">
+            <Login onSwitchToSignup={handleSignUpClick} />
+          </div>
+        </div>
+
+        {/* Overlay Container */}
+        <div className="absolute top-0 left-1/2 w-1/2 h-full overflow-hidden transition-transform duration-600 ease-in-out z-30 side-element-container">
+          <div className="bg-gradient-to-r from-green-500 to-emerald-600 relative -left-full h-full w-[200%] transform transition-transform duration-600 ease-in-out side-element">
+            
+            {/* Overlay Left */}
+            <div className="absolute flex items-center justify-center flex-col py-0 px-12 text-center top-0 h-full w-1/2 transform transition-transform duration-600 ease-in-out side-element-left">
+              <h1 className="text-3xl font-bold mb-4">Welcome Back!</h1>
+              <p className="text-sm leading-5 tracking-wider mb-8">
+                To keep connected with your spreadsheets and version history, please login with your personal info
+              </p>
+              <button 
+                className="ghost bg-transparent border-2 border-white rounded-2xl text-white text-xs font-bold py-3 px-12 uppercase transition-transform duration-80 ease-in mt-4"
+                onClick={handleSignInClick}
+              >
+                Sign In
+              </button>
+            </div>
+
+            {/* Overlay Right */}
+            <div className="absolute flex items-center justify-center flex-col py-0 px-12 text-center top-0 h-full w-1/2 right-0 transform transition-transform duration-600 ease-in-out side-element-right">
+              <h1 className="text-3xl font-bold mb-4">Hello, Friend!</h1>
+              <p className="text-sm leading-5 tracking-wider mb-8">
+                Enter your personal details and start your journey with XcelTrack version control
+              </p>
+              <button 
+                className="ghost bg-transparent border-2 border-white rounded-2xl text-white text-xs font-bold py-3 px-12 uppercase transition-transform duration-80 ease-in mt-4"
+                onClick={handleSignUpClick}
+              >
+                Sign Up
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
