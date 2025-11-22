@@ -75,5 +75,12 @@ const AuthForm: React.FC = () => {
     </div>
   );
 };
-
+// Add this to your handleSubmit functions in Login and Signup components:
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  // Your authentication logic here...
+  
+  // After successful login/signup, redirect to dashboard
+  // window.location.href = '/dashboard'; // Or use React Router navigation
+};
 export default AuthForm;
