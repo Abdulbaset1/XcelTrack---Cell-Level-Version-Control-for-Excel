@@ -23,7 +23,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
     try {
       const success = await login(email, password);
       if (success) {
-        navigate('/dashboard'); // Redirect to dashboard after login
+        navigate('/dashboard');
       }
     } catch (err) {
       setError('Login failed. Please try again.');
@@ -33,58 +33,57 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full">
-      <h1 className="text-2xl font-bold mb-2 text-gray-800">Sign in to XcelTrack</h1>
-      <hr className="w-16 h-1 bg-gradient-to-r from-green-500 to-emerald-600 border-0 rounded-full mb-8 mx-auto" />
+    <form onSubmit={handleSubmit} className="w-full max-w-md">
+      <h1 className="text-2xl font-bold mb-2 text-white">Sign in to XcelTrack</h1>
+      <hr className="w-16 h-1 bg-gradient-to-r from-purple-400 to-blue-400 border-0 rounded-full mb-6 mx-auto" />
       
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">
+        <div className="bg-red-500/20 backdrop-blur-sm border border-red-400/30 text-red-200 px-4 py-3 rounded-lg mb-4">
           {error}
         </div>
       )}
 
-      {/* Social Login and form inputs remain the same */}
-      <div className="flex justify-center space-x-3 mb-6 social-login">
-        <a href="#" className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors">
-          <i className="fab fa-google text-gray-600"></i>
-        </a>
-        <a href="#" className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors">
-          <i className="fab fa-twitter text-gray-600"></i>
-        </a>
-        <a href="#" className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors">
-          <i className="fab fa-linkedin text-gray-600"></i>
-        </a>
+      <div className="flex justify-center space-x-3 mb-6">
+        <button type="button" className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20">
+          <i className="fab fa-google text-purple-300"></i>
+        </button>
+        <button type="button" className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20">
+          <i className="fab fa-twitter text-purple-300"></i>
+        </button>
+        <button type="button" className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20">
+          <i className="fab fa-linkedin text-purple-300"></i>
+        </button>
       </div>
 
-      <div className="text-sm text-gray-500 mb-6">or use your email account</div>
+      <div className="text-sm text-purple-200 mb-6 text-center">or use your email account</div>
 
       {/* Email Input */}
-      <div className="group-input flex items-center w-full mb-4">
-        <div className="bg-gray-200 p-3 rounded-l-lg">
-          <i className="fa fa-envelope text-gray-500 w-4"></i>
+      <div className="flex items-center w-full mb-4">
+        <div className="bg-white/10 backdrop-blur-sm p-3 rounded-l-lg border border-white/20 border-r-0">
+          <i className="fa fa-envelope text-purple-300 w-4"></i>
         </div>
         <input
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 p-3 border border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="flex-1 p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-r-lg text-white placeholder-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all"
           required
           disabled={isLoading}
         />
       </div>
 
       {/* Password Input */}
-      <div className="group-input flex items-center w-full mb-6">
-        <div className="bg-gray-200 p-3 rounded-l-lg">
-          <i className="fa fa-lock text-gray-500 w-4"></i>
+      <div className="flex items-center w-full mb-6">
+        <div className="bg-white/10 backdrop-blur-sm p-3 rounded-l-lg border border-white/20 border-r-0">
+          <i className="fa fa-lock text-purple-300 w-4"></i>
         </div>
         <input
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="flex-1 p-3 border border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="flex-1 p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-r-lg text-white placeholder-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent transition-all"
           required
           disabled={isLoading}
         />
@@ -93,7 +92,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-6 rounded-2xl font-bold uppercase tracking-wider hover:from-green-600 hover:to-emerald-700 transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-3 px-6 rounded-xl font-bold uppercase tracking-wider hover:from-purple-700 hover:to-blue-700 transition-all duration-200 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
       >
         {isLoading ? 'Signing In...' : 'Sign In'}
       </button>
@@ -105,14 +104,16 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
           setEmail('demo@xceltrack.com');
           setPassword('demo123');
         }}
-        className="w-full mt-4 border border-green-500 text-green-600 py-3 px-6 rounded-2xl font-bold uppercase tracking-wider hover:bg-green-50 transition-all duration-200"
+        className="w-full mt-4 border border-purple-400/50 text-purple-300 py-3 px-6 rounded-xl font-bold uppercase tracking-wider hover:bg-purple-500/10 backdrop-blur-sm transition-all duration-200"
       >
         Fill Demo Credentials
       </button>
 
-      <a href="#" className="text-green-600 hover:text-green-800 text-sm mt-4 block">
-        Forgot your password?
-      </a>
+      <div className="text-center mt-4">
+        <a href="#" className="text-purple-300 hover:text-purple-200 text-sm transition-colors">
+          Forgot your password?
+        </a>
+      </div>
     </form>
   );
 };
