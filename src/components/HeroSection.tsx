@@ -1,62 +1,77 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import BlurText from './BlurText';
 
 const HeroSection: React.FC = () => {
   return (
-    <section className="bg-gradient-to-b from-gray-900 to-gray-800 text-white py-20">
-      <div className="max-w-7xl mx-auto px-6 text-center">
-        <h1 className="text-5xl md:text-6xl font-bold mb-6">
-          Where <span className="text-blue-400">Excel</span> meets<br />
-          <span className="text-purple-400">Version Control</span>
-        </h1>
-        
-        <p className="text-xl md:text-2xl text-gray-300 mb-8 max-w-3xl mx-auto">
-          XcelTrack brings powerful version control to your spreadsheets. 
+    <section className="relative py-20 overflow-hidden">
+      <div className="max-w-7xl mx-auto px-6 text-center relative z-10">
+        <div className="inline-block mb-4 px-4 py-1 rounded-full bg-white/10 border border-white/20 backdrop-blur-sm">
+          <span className="text-blue-200 text-sm font-medium">✨ The Future of Excel Collaboration</span>
+        </div>
+
+        <div className="text-5xl md:text-7xl font-bold mb-6 text-white leading-tight flex flex-col items-center justify-center">
+          <div className="flex flex-wrap justify-center gap-x-3 md:gap-x-4">
+            <BlurText text="Where" delay={150} animateBy="words" direction="top" className="text-white" />
+            <BlurText text="Excel" delay={150} animateBy="words" direction="top" className="text-blue-400" />
+            <BlurText text="meets" delay={150} animateBy="words" direction="top" className="text-white" />
+          </div>
+          <div className="mt-2 md:mt-4">
+            <BlurText text="Version Control" delay={150} animateBy="words" direction="top" className="text-purple-400" />
+          </div>
+        </div>
+
+        <p className="text-xl md:text-2xl text-blue-100 mb-10 max-w-3xl mx-auto leading-relaxed">
+          XcelTrack brings powerful version control to your spreadsheets.
           Track changes, collaborate seamlessly, and never lose your work again.
         </p>
 
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
+        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
           <Link
             to="/signup"
-            className="bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors w-full sm:w-auto text-center"
+            className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-105 border border-white/20 w-full sm:w-auto text-center"
           >
-            Sign up for free
+            Start for free
           </Link>
-          <button className="border border-gray-600 hover:border-gray-400 text-gray-300 hover:text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors w-full sm:w-auto">
-            Watch demo →
+          <button className="bg-white/5 hover:bg-white/10 text-white border border-white/20 px-8 py-4 rounded-xl text-lg font-semibold transition-all backdrop-blur-sm w-full sm:w-auto flex items-center justify-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Watch Demo
           </button>
         </div>
 
         {/* Feature Highlights */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <div className="w-12 h-12 bg-blue-500 rounded-lg mb-4 mx-auto flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+          <div className="bg-[rgba(255,255,255,0.1)] backdrop-blur-lg border border-white/10 p-8 rounded-2xl hover:bg-[rgba(255,255,255,0.15)] transition-all group">
+            <div className="w-14 h-14 bg-blue-500/20 rounded-xl mb-6 mx-auto flex items-center justify-center border border-blue-400/30 group-hover:scale-110 transition-transform">
+              <svg className="w-7 h-7 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold mb-2">Cell-Level Tracking</h3>
-            <p className="text-gray-400">Track changes at individual cell level with complete history</p>
+            <h3 className="text-xl font-bold mb-3 text-white">Cell-Level Tracking</h3>
+            <p className="text-blue-100 leading-relaxed">Track changes at individual cell level. See exactly who changed what and why.</p>
           </div>
 
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <div className="w-12 h-12 bg-green-500 rounded-lg mb-4 mx-auto flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+          <div className="bg-[rgba(255,255,255,0.1)] backdrop-blur-lg border border-white/10 p-8 rounded-2xl hover:bg-[rgba(255,255,255,0.15)] transition-all group">
+            <div className="w-14 h-14 bg-purple-500/20 rounded-xl mb-6 mx-auto flex items-center justify-center border border-purple-400/30 group-hover:scale-110 transition-transform">
+              <svg className="w-7 h-7 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold mb-2">Team Collaboration</h3>
-            <p className="text-gray-400">Work together seamlessly with real-time collaboration features</p>
+            <h3 className="text-xl font-bold mb-3 text-white">AI Assistance</h3>
+            <p className="text-blue-100 leading-relaxed">Get instant formula explanations, error detection, and anomaly alerts.</p>
           </div>
 
-          <div className="bg-gray-800 p-6 rounded-lg">
-            <div className="w-12 h-12 bg-purple-500 rounded-lg mb-4 mx-auto flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          <div className="bg-[rgba(255,255,255,0.1)] backdrop-blur-lg border border-white/10 p-8 rounded-2xl hover:bg-[rgba(255,255,255,0.15)] transition-all group">
+            <div className="w-14 h-14 bg-indigo-500/20 rounded-xl mb-6 mx-auto flex items-center justify-center border border-indigo-400/30 group-hover:scale-110 transition-transform">
+              <svg className="w-7 h-7 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold mb-2">Smart Merge</h3>
-            <p className="text-gray-400">Automatically resolve conflicts and merge changes intelligently</p>
+            <h3 className="text-xl font-bold mb-3 text-white">Real-Time Sync</h3>
+            <p className="text-blue-100 leading-relaxed">Collaborate seamlessly with your team. Work online or offline with smart sync.</p>
           </div>
         </div>
       </div>
