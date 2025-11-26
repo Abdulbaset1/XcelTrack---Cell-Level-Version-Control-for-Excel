@@ -41,16 +41,19 @@ const FeaturesSection: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="flex flex-wrap justify-center gap-8">
           {features.map((feature, index) => (
-            <div key={index} className="bg-[rgba(255,255,255,0.05)] backdrop-blur-lg border border-white/10 p-8 rounded-2xl hover:bg-[rgba(255,255,255,0.1)] transition-all hover:-translate-y-1 group">
-              <div className="text-4xl mb-6 bg-white/5 w-16 h-16 rounded-2xl flex items-center justify-center border border-white/10 group-hover:scale-110 transition-transform">{feature.icon}</div>
-              <h3 className="text-xl font-bold text-white mb-3">
-                {feature.title}
-              </h3>
-              <p className="text-blue-100 leading-relaxed">
-                {feature.description}
-              </p>
+            <div key={index} className="group relative w-full md:w-[calc(50%-1rem)] lg:w-[calc((100%-4rem)/3)]">
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-2xl blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <div className="relative bg-[rgba(255,255,255,0.05)] backdrop-blur-lg border border-white/10 p-8 rounded-2xl hover:border-blue-500/40 transition-all hover:-translate-y-1 h-full">
+                <div className="text-4xl mb-6 bg-white/5 w-16 h-16 rounded-2xl flex items-center justify-center border border-white/10 group-hover:scale-110 transition-transform shadow-lg">{feature.icon}</div>
+                <h3 className="text-xl font-bold text-white mb-3">
+                  {feature.title}
+                </h3>
+                <p className="text-blue-100 leading-relaxed">
+                  {feature.description}
+                </p>
+              </div>
             </div>
           ))}
         </div>
