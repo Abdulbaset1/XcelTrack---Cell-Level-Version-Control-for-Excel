@@ -6,12 +6,7 @@ import Footer from '../components/Footer';
 
 const Landing: React.FC = () => {
   return (
-    <div
-      className="min-h-screen text-[#051747]"
-      style={{
-        background: 'linear-gradient(135deg, #FEFEFE 0%, #E7E9F0 100%)',
-      }}
-    >
+    <div className="min-h-screen text-[#051747] bg-[#D3E3FC]">
       {/* Updated Navbar - Only shows Sign In/Sign Up */}
       <nav className="bg-transparent px-6 py-4 border-b border-[#051747]/10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -41,9 +36,10 @@ const Landing: React.FC = () => {
             </Link>
             <Link
               to="/signup"
-              className="bg-[#051747] hover:bg-[#081F62] text-white px-6 py-2 rounded-lg transition-colors font-semibold shadow-lg"
+              className="group relative overflow-hidden bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-all font-semibold shadow-lg"
             >
-              Sign up
+              <span className="relative z-10">Sign up</span>
+              <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent ease-in-out" />
             </Link>
           </div>
         </div>
@@ -65,9 +61,10 @@ const Landing: React.FC = () => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               to="/signup"
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-105 w-full sm:w-auto text-center"
+              className="group relative overflow-hidden bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-105 w-full sm:w-auto text-center"
             >
-              Get started for free
+              <span className="relative z-10">Get started for free</span>
+              <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent ease-in-out" />
             </Link>
             <button className="bg-white hover:bg-gray-50 text-[#051747] border border-[#051747]/20 px-8 py-4 rounded-xl text-lg font-semibold transition-all w-full sm:w-auto flex items-center justify-center gap-2 shadow-sm">
               Contact sales

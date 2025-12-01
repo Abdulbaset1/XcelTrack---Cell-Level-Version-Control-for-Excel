@@ -34,7 +34,7 @@ const HeroSection: React.FC = () => {
                         <BlurText text="meets" delay={150} animateBy="words" direction="top" className="text-[#051747]" />
                     </div>
                     <div className="mt-2 md:mt-4">
-                        <BlurText text="Version Control" delay={150} animateBy="words" direction="top" className="text-purple-600" />
+                        <BlurText text="Version Control" delay={150} animateBy="words" direction="top" className="!text-[#000080]" />
                     </div>
                 </div>
 
@@ -46,9 +46,10 @@ const HeroSection: React.FC = () => {
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
                     <Link
                         to="/signup"
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-105 w-full sm:w-auto text-center"
+                        className="group relative overflow-hidden bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl text-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-105 w-full sm:w-auto text-center"
                     >
-                        Start for free
+                        <span className="relative z-10">Start for free</span>
+                        <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent ease-in-out" />
                     </Link>
                     <button className="bg-white hover:bg-gray-50 text-[#051747] border border-[#051747]/20 px-8 py-4 rounded-xl text-lg font-semibold transition-all w-full sm:w-auto flex items-center justify-center gap-2 shadow-sm">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -63,8 +64,8 @@ const HeroSection: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
                     {/* Card 1: Blue */}
                     <div className="group relative">
-                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-500/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        <div className="relative bg-white border border-[#051747]/10 p-8 rounded-2xl hover:border-blue-500/40 transition-all duration-300 h-full shadow-sm hover:shadow-md">
+                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/100                  to-blue-500/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        <div className="relative bg-[#E6E6FA] border border-[#051747]/10 p-8 rounded-2xl hover:border-blue-500/40 transition-all duration-300 h-full shadow-2xl hover:shadow-2xl hover:-translate-y-2">
                             <div className="w-14 h-14 bg-blue-50 rounded-xl mb-6 mx-auto flex items-center justify-center border border-blue-100 group-hover:scale-110 transition-transform">
                                 <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -77,8 +78,8 @@ const HeroSection: React.FC = () => {
 
                     {/* Card 2: Purple */}
                     <div className="group relative">
-                        <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 to-purple-500/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        <div className="relative bg-white border border-[#051747]/10 p-8 rounded-2xl hover:border-purple-500/40 transition-all duration-300 h-full shadow-sm hover:shadow-md">
+                        <div className="absolute inset-0 bg-gradient-to-br from-purple-500/100 to-purple-500/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        <div className="relative bg-[#E6E6FA] border border-[#051747]/10 p-8 rounded-2xl hover:border-purple-500/40 transition-all duration-300 h-full shadow-2xl hover:shadow-2xl hover:-translate-y-2">
                             <div className="w-14 h-14 bg-purple-50 rounded-xl mb-6 mx-auto flex items-center justify-center border border-purple-100 group-hover:scale-110 transition-transform">
                                 <svg className="w-7 h-7 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -91,8 +92,8 @@ const HeroSection: React.FC = () => {
 
                     {/* Card 3: Indigo */}
                     <div className="group relative">
-                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-indigo-500/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        <div className="relative bg-white border border-[#051747]/10 p-8 rounded-2xl hover:border-indigo-500/40 transition-all duration-300 h-full shadow-sm hover:shadow-md">
+                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/100 to-indigo-500/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        <div className="relative bg-[#E6E6FA] border border-[#051747]/10 p-8 rounded-2xl hover:border-indigo-500/20 transition-all duration-300 h-full shadow-2xl hover:shadow-2xl hover:-translate-y-2">
                             <div className="w-14 h-14 bg-indigo-50 rounded-xl mb-6 mx-auto flex items-center justify-center border border-indigo-100 group-hover:scale-110 transition-transform">
                                 <svg className="w-7 h-7 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
