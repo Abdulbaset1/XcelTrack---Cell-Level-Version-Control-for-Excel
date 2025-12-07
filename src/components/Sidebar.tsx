@@ -1,7 +1,12 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  isOpen: boolean;
+  toggleSidebar?: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
   const location = useLocation();
 
   const menuItems = [
@@ -40,21 +45,18 @@ const Sidebar: React.FC = () => {
   };
 
   return (
-    <div className="w-64 bg-slate-900 border-r border-white/10 text-white h-screen fixed left-0 top-0 shadow-2xl z-50">
+    <div className={`w-64 bg-[#0D2440] border-r border-white/10 text-white h-screen fixed left-0 top-0 shadow-2xl z-40 transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       {/* Logo Section */}
       <div className="p-6 border-b border-white/10">
         <Link to="/dashboard" className="flex items-center space-x-3">
-          <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 via-purple-500 to-purple-600 rounded-xl shadow-lg border border-white/20">
-            <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2zm0 2v16h12V10h-6V4H6zm8 4h4l-4-4v4z" />
-              <path d="M8 12h8v2H8v-2zm0 4h8v2H8v-2zm0 4h5v2H8v-2z" fill="white" />
-            </svg>
+          <div className="flex items-center justify-center w-12 h-12 bg-white rounded-xl shadow-lg p-1">
+            <img src="/logo.png" alt="XcelTrack Logo" className="w-full h-full object-contain" />
           </div>
           <div className="flex flex-col">
-            <span className="text-lg font-bold text-white">
+            <span className="text-xl font-extrabold text-white tracking-wide">
               XcelTrack
             </span>
-            <span className="text-xs text-blue-200 -mt-1">Dashboard</span>
+            <span className="text-sm text-blue-100 font-medium">Dashboard</span>
           </div>
         </Link>
       </div>
@@ -67,16 +69,16 @@ const Sidebar: React.FC = () => {
               <Link
                 to={item.path}
                 className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${isActive(item.path)
-                    ? 'bg-white/10 text-white shadow-lg border border-white/10'
-                    : 'text-blue-200 hover:bg-white/5 hover:text-white'
+                  ? 'bg-sapphire-600 text-white shadow-lg border border-white/10'
+                  : 'text-blue-200 hover:bg-white/5 hover:text-white'
                   }`}
               >
-                <div className={`${isActive(item.path) ? 'text-blue-400' : 'text-blue-300'}`}>
+                <div className={`${isActive(item.path) ? 'text-white' : 'text-blue-300'}`}>
                   {item.icon}
                 </div>
-                <span className="font-medium">{item.label}</span>
+                <span className="font-semibold text-base">{item.label}</span>
                 {isActive(item.path) && (
-                  <div className="ml-auto w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)]"></div>
+                  <div className="ml-auto w-2 h-2 bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.6)]"></div>
                 )}
               </Link>
             </li>
@@ -85,14 +87,14 @@ const Sidebar: React.FC = () => {
       </nav>
 
       {/* User Info Section */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-white/10 bg-slate-900/50 backdrop-blur-sm">
+      <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-white/10 bg-[#051747]/50 backdrop-blur-sm">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center border border-white/20 shadow-lg">
             <span className="text-white font-semibold text-sm">AJ</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white font-medium text-sm truncate">Alex Johnson</p>
-            <p className="text-blue-300 text-xs truncate">Senior Data Analyst</p>
+            <p className="text-white font-bold text-sm truncate">Alex Johnson</p>
+            <p className="text-blue-200 text-xs font-medium truncate">Senior Data Analyst</p>
           </div>
         </div>
       </div>

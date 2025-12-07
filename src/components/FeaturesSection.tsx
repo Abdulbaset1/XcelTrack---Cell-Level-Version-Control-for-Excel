@@ -29,10 +29,13 @@ const FeaturesSection: React.FC = () => {
     }
   ];
 
+  // Duplicate features for seamless scrolling
+  const allFeatures = [...features, ...features];
+
   return (
-    <section className="py-20 relative z-10">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="text-center mb-16">
+    <section className="py-20 relative z-10 overflow-hidden">
+      <div className="max-w-7xl mx-auto px-6 mb-16">
+        <div className="text-center">
           <h2 className="text-4xl font-bold text-[#051747] mb-4">
             Powerful features for modern teams
           </h2>
@@ -40,17 +43,27 @@ const FeaturesSection: React.FC = () => {
             Everything you need to manage your spreadsheets with the power of version control
           </p>
         </div>
+      </div>
 
-        <div className="flex flex-wrap justify-center gap-8">
-          {features.map((feature, index) => (
-            <div key={index} className="group relative w-full md:w-[calc(50%-1rem)] lg:w-[calc((100%-4rem)/3)]">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-purple-500/5 rounded-2xl blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <div className="relative bg-white border border-[#051747]/10 p-8 rounded-2xl hover:border-blue-500/40 transition-all hover:-translate-y-1 h-full shadow-sm hover:shadow-md">
-                <div className="text-4xl mb-6 bg-blue-50 w-16 h-16 rounded-2xl flex items-center justify-center border border-blue-100 group-hover:scale-110 transition-transform shadow-sm">{feature.icon}</div>
-                <h3 className="text-xl font-bold text-[#051747] mb-3">
+      {/* Marquee Container - Full Width */}
+      <div className="relative w-full overflow-hidden group">
+        {/* Scrolling Track */}
+        <div className="flex gap-40 w-max animate-scroll-right group-hover:[animation-play-state:paused]">
+          {allFeatures.map((feature, index) => (
+            <div key={index} className="group/card relative w-[350px] flex-shrink-0">
+              {/* Tilted Dark Background */}
+              <div
+                className="absolute inset-0 bg-[#0D2440] rounded-2xl transform rotate-3 translate-y-2 translate-x-2 -z-10 transition-transform duration-300 group-hover/card:rotate-6"
+              ></div>
+
+              <div
+                className="hover-card-blue border-2 border-sapphire-900/30 p-8 rounded-2xl h-full shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] hover:shadow-[0_25px_50px_-12px_rgba(0,0,0,0.5)] hover:-translate-y-6"
+              >
+                <div className="text-4xl mb-6 bg-sapphire-50 w-16 h-16 rounded-2xl flex items-center justify-center border border-sapphire-50 group-hover/card:scale-110 transition-transform shadow-sm">{feature.icon}</div>
+                <h3 className="text-xl font-bold mb-3">
                   {feature.title}
                 </h3>
-                <p className="text-[#535F80] leading-relaxed">
+                <p className="leading-relaxed">
                   {feature.description}
                 </p>
               </div>
