@@ -4,41 +4,45 @@
 
 /* Auth Form Animations */
 .right-panel-active .sign-in-container {
-  transform: translateX(100%);
+    transform: translateX(100%);
 }
 
 .right-panel-active .sign-up-container {
-  transform: translateX(100%);
-  opacity: 1;
-  z-index: 25;
-  animation: show 0.6s;
+    transform: translateX(100%);
+    opacity: 1;
+    z-index: 25;
+    animation: show 0.6s;
 }
 
 .right-panel-active .side-element-container {
-  transform: translateX(-100%);
+    transform: translateX(-100%);
 }
 
 .right-panel-active .side-element {
-  transform: translateX(50%);
+    transform: translateX(50%);
 }
 
 .right-panel-active .side-element-left {
-  transform: translateX(0);
+    transform: translateX(0);
 }
 
 .right-panel-active .side-element-right {
-  transform: translateX(20%);
+    transform: translateX(20%);
 }
 
 @keyframes show {
-  0%, 49.99% {
-    opacity: 0;
-    z-index: 1;
-  }
-  50%, 100% {
-    opacity: 1;
-    z-index: 25;
-  }
+
+    0%,
+    49.99% {
+        opacity: 0;
+        z-index: 1;
+    }
+
+    50%,
+    100% {
+        opacity: 1;
+        z-index: 25;
+    }
 }
 
 /* Social Icons - Using Font Awesome */
@@ -46,31 +50,97 @@
 
 /* Custom styles for auth forms */
 .group-input {
-  display: flex;
-  align-items: center;
-  width: 100%;
+    display: flex;
+    align-items: center;
+    width: 100%;
 }
 
 .social-login a {
-  transition: all 0.3s ease;
+    transition: all 0.3s ease;
 }
 
 .social-login a:hover {
-  transform: translateY(-2px);
+    transform: translateY(-2px);
 }
 
 /* Ghost button styles */
 .ghost {
-  background-color: transparent;
-  border-color: #ffffff;
-  transition: all 0.3s ease;
+    background-color: transparent;
+    border-color: #ffffff;
+    transition: all 0.3s ease;
 }
 
 .ghost:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  transform: scale(1.05);
+    background-color: rgba(255, 255, 255, 0.1);
+    transform: scale(1.05);
 }
 
 .ghost:active {
-  transform: scale(0.95);
+    transform: scale(0.95);
+}
+
+/* Custom Hover Card Effect */
+.hover-card {
+    position: relative;
+    background: white;
+    /* Default white background */
+    overflow: hidden;
+    /* Ensure pseudo-elements don't overflow */
+    transition: all 0.5s;
+    z-index: 1;
+    /* Establish stacking context */
+    color: #051747;
+    /* Default dark text color */
+}
+
+.hover-card:hover {
+    color: #051747;
+    /* Keep dark text on hover (light blue background) */
+}
+
+.hover-card h3,
+.hover-card p,
+.hover-card svg {
+    transition: color 0.5s, stroke 0.5s;
+}
+
+.hover-card>* {
+    position: relative;
+    z-index: 10;
+    /* Ensure content stays on top */
+}
+
+.hover-card::before,
+.hover-card::after {
+    position: absolute;
+    content: "";
+    width: 0;
+    /* Hidden initially */
+    height: 0;
+    /* Hidden initially */
+    background-color: lightblue;
+    /* Matches user's code snippet */
+    transition: all 0.5s;
+    z-index: 0;
+    /* Behind content */
+}
+
+.hover-card::before {
+    top: 0;
+    right: 0;
+    border-radius: 0 15px 0 100%;
+}
+
+.hover-card::after {
+    bottom: 0;
+    left: 0;
+    border-radius: 0 100% 0 15px;
+}
+
+.hover-card:hover::before,
+.hover-card:hover::after {
+    width: 100%;
+    height: 100%;
+    border-radius: 15px;
+    transition: all 0.5s;
 }
