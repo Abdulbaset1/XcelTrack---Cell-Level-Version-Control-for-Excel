@@ -144,3 +144,113 @@
     border-radius: 15px;
     transition: all 0.5s;
 }
+
+/* Inverted Hover Card Effect (Blue -> White) */
+.hover-card-blue {
+    position: relative;
+    background: lightblue;
+    /* Default light blue background */
+    overflow: hidden;
+    transition: all 0.5s;
+    z-index: 1;
+    color: #051747;
+}
+
+.hover-card-blue:hover {
+    color: #051747;
+}
+
+.hover-card-blue h3,
+.hover-card-blue p,
+.hover-card-blue svg {
+    transition: color 0.5s, stroke 0.5s;
+}
+
+.hover-card-blue>* {
+    position: relative;
+    z-index: 10;
+}
+
+.hover-card-blue::before,
+.hover-card-blue::after {
+    position: absolute;
+    content: "";
+    width: 0;
+    height: 0;
+    background-color: white;
+    /* White on hover */
+    transition: all 0.5s;
+    z-index: 0;
+}
+
+.hover-card-blue::before {
+    top: 0;
+    right: 0;
+    border-radius: 0 15px 0 100%;
+}
+
+.hover-card-blue::after {
+    bottom: 0;
+    left: 0;
+    border-radius: 0 100% 0 15px;
+}
+
+.hover-card-blue:hover::before,
+.hover-card-blue:hover::after {
+    width: 100%;
+    height: 100%;
+    border-radius: 15px;
+    transition: all 0.5s;
+}
+
+/* Watch Demo Button - Sliding Effect */
+.btn-watch-demo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(1rem - 2px) calc(2rem - 2px);
+    /* Adjusted for 2px border to match px-8 py-4 */
+    font-size: 1.125rem;
+    /* text-lg */
+    font-weight: 600;
+    /* font-semibold */
+    color: white;
+    /* Changed to white */
+    border: 2px solid #2E5E99;
+    /* Sapphire 600 */
+    cursor: pointer;
+    position: relative;
+    background-color: #2E5E99;
+    /* Changed to Sapphire 600 */
+    text-decoration: none;
+    overflow: hidden;
+    z-index: 1;
+    font-family: inherit;
+    border-radius: 0.75rem;
+    /* rounded-xl */
+    transition: color 0.3s;
+    gap: 0.5rem;
+    box-sizing: border-box;
+}
+
+.btn-watch-demo::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #0D2440;
+    /* Sapphire 900 (Hover color of Start for free) */
+    transform: translateX(-100%);
+    transition: all 0.3s;
+    z-index: -1;
+}
+
+.btn-watch-demo:hover::before {
+    transform: translateX(0);
+}
+
+.btn-watch-demo:hover {
+    color: white;
+}

@@ -4,8 +4,9 @@ import { Link } from 'react-router-dom';
 
 const Footer: React.FC = () => {
     return (
-        <footer className="bg-[#051747] text-white py-12 relative z-10">
-            <div className="max-w-7xl mx-auto px-6">
+        <footer className="bg-[#051747] text-white py-12 relative z-10" style={{ backgroundImage: "url('/assets/footer-bg.png')", backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
+            <div className="absolute inset-0 bg-[#051747]/20 z-0"></div>
+            <div className="max-w-7xl mx-auto px-6 relative z-10">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
                     {/* Company */}
                     <div>

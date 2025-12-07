@@ -6,6 +6,12 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        sapphire: {
+          50: '#E7F0FA',
+          300: '#7BA4D0',
+          600: '#2E5E99',
+          900: '#030508ff',
+        },
         navy: {
           50: '#f0f9ff',
           100: '#e0f2fe',
@@ -42,6 +48,9 @@ module.exports = {
         'fade-in': 'fadeIn 0.5s ease-in-out',
         'slide-up': 'slideUp 0.5s ease-out',
         'pulse-slow': 'pulse 3s infinite',
+        'slide-in-right': 'slideInRight 0.8s ease-out forwards',
+        'slide-in-left': 'slideInLeft 0.8s ease-out forwards',
+        'scroll-right': 'scrollRight 20s linear infinite',
       },
       keyframes: {
         fadeIn: {
@@ -51,6 +60,18 @@ module.exports = {
         slideUp: {
           '0%': { transform: 'translateY(20px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        slideInRight: {
+          '0%': { transform: 'translateX(100%)', opacity: '0' },
+          '100%': { transform: 'translateX(0)', opacity: '1' },
+        },
+        slideInLeft: {
+          '0%': { transform: 'translateX(-100%)', opacity: '0' },
+          '100%': { transform: 'translateX(0)', opacity: '1' },
+        },
+        scrollRight: {
+          '0%': { transform: 'translateX(-50%)' },
+          '100%': { transform: 'translateX(0)' },
         }
       }
     },

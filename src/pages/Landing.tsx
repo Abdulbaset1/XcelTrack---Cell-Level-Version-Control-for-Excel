@@ -3,12 +3,15 @@ import { Link } from 'react-router-dom';
 import HeroSection from '../components/HeroSection';
 import FeaturesSection from '../components/FeaturesSection';
 import Footer from '../components/Footer';
+import ParallaxBackground from '../components/ParallaxBackground';
 
 const Landing: React.FC = () => {
   return (
-    <div className="min-h-screen text-[#051747] bg-sapphire-50">
+    <div className="min-h-screen text-[#051747] bg-sapphire-50 relative overflow-hidden">
+      <ParallaxBackground />
+
       {/* Updated Navbar - Only shows Sign In/Sign Up */}
-      <nav className="bg-transparent px-6 py-4 border-b border-sapphire-900/10">
+      <nav className="bg-sapphire-50/50 backdrop-blur-md sticky top-0 z-50 px-6 py-4 border-b border-sapphire-900/10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-3 hover:opacity-90 transition-opacity">
@@ -50,12 +53,12 @@ const Landing: React.FC = () => {
       <FeaturesSection />
 
       {/* CTA Section */}
-      <section className="py-20 bg-transparent">
-        <div className="max-w-4xl mx-auto text-center px-6">
-          <h2 className="text-4xl font-bold mb-6 text-[#051747]">
+      <section className="pt-20 bg-transparent relative z-20">
+        <div className="bg-white pt-20 pb-20 px-10 w-full text-center shadow-2xl">
+          <h2 className="text-4xl font-bold mb-6 text-[#051747] max-w-2xl mx-auto">
             Ready to transform your spreadsheet workflow?
           </h2>
-          <p className="text-xl text-[#535F80] mb-8">
+          <p className="text-xl text-[#535F89] mb-8 max-w-2xl mx-auto">
             Join thousands of teams already using XcelTrack for better collaboration and version control.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -66,7 +69,7 @@ const Landing: React.FC = () => {
               <span className="relative z-10">Get started for free</span>
               <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent ease-in-out" />
             </Link>
-            <button className="bg-white hover:bg-gray-50 text-[#051747] border border-sapphire-900/20 px-8 py-4 rounded-xl text-lg font-semibold transition-all w-full sm:w-auto flex items-center justify-center gap-2 shadow-sm">
+            <button className="btn-watch-demo w-full sm:w-auto shadow-sm">
               Contact sales
             </button>
           </div>

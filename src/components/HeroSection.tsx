@@ -38,7 +38,7 @@ const HeroSection: React.FC = () => {
                     </div>
                 </div>
 
-                <p className="text-xl md:text-2xl text-[#535F80] mb-10 max-w-3xl mx-auto leading-relaxed">
+                <p className="text-xl md:text-2xl text-[#535F79] mb-10 max-w-3xl mx-auto leading-relaxed">
                     XcelTrack brings powerful version control to your spreadsheets.
                     Track changes, collaborate seamlessly, and never lose your work again.
                 </p>
@@ -51,7 +51,7 @@ const HeroSection: React.FC = () => {
                         <span className="relative z-10">Start for free</span>
                         <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/30 to-transparent ease-in-out" />
                     </Link>
-                    <button className="bg-white hover:bg-gray-50 text-[#051747] border border-sapphire-900/20 px-8 py-4 rounded-xl text-lg font-semibold transition-all w-full sm:w-auto flex items-center justify-center gap-2 shadow-sm">
+                    <button className="btn-watch-demo w-full sm:w-auto shadow-sm">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
