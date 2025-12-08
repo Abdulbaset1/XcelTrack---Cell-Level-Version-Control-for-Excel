@@ -1,10 +1,10 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const Dashboard: React.FC = () => {
-  const navigate = useNavigate();
-  const { logout } = useAuth();
+  // const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Mock data - in real app, this would come from your backend
   const recentFiles = [
@@ -21,10 +21,7 @@ const Dashboard: React.FC = () => {
     lastLogin: '2 hours ago'
   };
 
-  const handleSignOut = () => {
-    logout();
-    navigate('/'); // Redirect to landing page
-  };
+
 
   // Styles updated for Light Sapphire Theme with Tilted Background Effect
   const cardStyle = "bg-white backdrop-blur-lg border border-white/60 rounded-2xl shadow-xl overflow-visible transition-all duration-300 hover:shadow-[0_20px_50px_rgba(59,130,246,0.3)]";
@@ -41,17 +38,12 @@ const Dashboard: React.FC = () => {
           <div className={`${cardStyle} p-8 mb-8`}>
             <div className="flex justify-between items-start">
               <div>
-                <h1 className="text-4xl font-bold mb-2 text-[#051747]">Welcome back, Rehana! 👋</h1>
+                <h1 className="text-4xl font-bold mb-2 text-[#051747]">Welcome back, {user?.name || 'User'}! 👋</h1>
                 <p className="text-[#535F80] text-lg">
                   Ready to continue working on your spreadsheets? Here's what's happening today.
                 </p>
               </div>
-              <button
-                onClick={handleSignOut}
-                className="btn-watch-demo bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl font-semibold transition-all duration-300 shadow-lg"
-              >
-                Sign Out
-              </button>
+
             </div>
           </div>
         </div>
