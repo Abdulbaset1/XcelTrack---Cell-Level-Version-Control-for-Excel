@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ProfileCard from '../components/ProfileCard';
+import { useAuth } from '../contexts/AuthContext';
 
 const Profile: React.FC = () => {
-    const [userData] = useState({
-        name: 'Rehana Hassan',
-        email: 'rehana.hassan@example.com',
+    const { user } = useAuth();
+    const [userData, setUserData] = useState({
+        name: user?.name || 'User',
+        email: user?.email || 'No Email',
         phone: '+1 (555) 123-4567',
         location: 'Pakistan, CA',
         jobTitle: 'Senior Data Analyst',
@@ -13,6 +15,16 @@ const Profile: React.FC = () => {
         joinDate: 'January 2023',
         bio: 'Data enthusiast passionate about spreadsheet automation and version control. Love working with Excel and exploring new data visualization techniques.',
     });
+
+    useEffect(() => {
+        if (user) {
+            setUserData(prev => ({
+                ...prev,
+                name: user.name || prev.name,
+                email: user.email || prev.email
+            }));
+        }
+    }, [user]);
 
     const [stats] = useState({
         excelFiles: 47,

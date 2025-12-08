@@ -5,20 +5,25 @@ import {
   signOut,
   onAuthStateChanged,
   updateProfile,
-  User as FirebaseUser
+  signInWithPopup,
+  sendPasswordResetEmail
 } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth, googleProvider, githubProvider } from '../firebase';
 
 interface User {
   id: string;
   name: string;
   email: string;
+  photoURL: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<boolean>;
+  resetPassword: (email: string) => Promise<void>;
+  loginWithGoogle: () => Promise<boolean>;
+  loginWithGithub: () => Promise<boolean>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
@@ -48,7 +53,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser({
           id: firebaseUser.uid,
           name: firebaseUser.displayName || '',
-          email: firebaseUser.email || ''
+          email: firebaseUser.email || '',
+          photoURL: firebaseUser.photoURL || null
         });
       } else {
         setUser(null);
@@ -65,7 +71,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return true;
     } catch (error) {
       console.error("Login error:", error);
-      throw error; // Re-throw to let components handle specific errors if needed
+      throw error;
     }
   };
 
@@ -76,16 +82,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         displayName: name
       });
 
-      // Manually update local state to reflect the name change immediately
       setUser({
         id: userCredential.user.uid,
         name: name,
-        email: email
+        email: email,
+        photoURL: null
       });
 
       return true;
     } catch (error) {
       console.error("Signup error:", error);
+      throw error;
+    }
+  };
+
+  const loginWithGoogle = async (): Promise<boolean> => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+      return true;
+    } catch (error) {
+      console.error("Google login error:", error);
+      throw error;
+    }
+  };
+
+  const loginWithGithub = async (): Promise<boolean> => {
+    try {
+      await signInWithPopup(auth, githubProvider);
+      return true;
+    } catch (error) {
+      console.error("Github login error:", error);
+      throw error;
+    }
+  };
+
+  const resetPassword = async (email: string): Promise<void> => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error) {
+      console.error("Reset password error:", error);
       throw error;
     }
   };
@@ -102,6 +137,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     login,
     signup,
+    loginWithGoogle,
+    loginWithGithub,
+    resetPassword,
     logout,
     isAuthenticated: !!user,
     loading

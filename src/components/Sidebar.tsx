@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -8,6 +9,7 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
   const location = useLocation();
+  const { user } = useAuth();
 
   const menuItems = [
     {
@@ -42,6 +44,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
 
   const isActive = (path: string) => {
     return location.pathname === path;
+  };
+
+  // Helper to get initials
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
   };
 
   return (
@@ -89,12 +101,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
       {/* User Info Section */}
       <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-white/10 bg-[#051747]/50 backdrop-blur-sm">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center border border-white/20 shadow-lg">
-            <span className="text-white font-semibold text-sm">AJ</span>
-          </div>
+          {user?.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt={user.name || 'User'}
+              className="w-10 h-10 rounded-full border border-white/20 shadow-lg object-cover"
+            />
+          ) : (
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center border border-white/20 shadow-lg">
+              <span className="text-white font-semibold text-sm">
+                {user?.name ? getInitials(user.name) : 'U'}
+              </span>
+            </div>
+          )}
           <div className="flex-1 min-w-0">
-            <p className="text-white font-bold text-sm truncate">Alex Johnson</p>
-            <p className="text-blue-200 text-xs font-medium truncate">Senior Data Analyst</p>
+            <p className="text-white font-bold text-sm truncate">{user?.name || 'User'}</p>
+            <p className="text-blue-200 text-xs font-medium truncate">{user?.email || 'No Email'}</p>
           </div>
         </div>
       </div>

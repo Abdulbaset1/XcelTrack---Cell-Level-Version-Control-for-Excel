@@ -11,8 +11,9 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
-  const { login } = useAuth();
+  const { login, loginWithGoogle, loginWithGithub, resetPassword } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,14 +45,33 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
       )}
 
       <div className="flex justify-center space-x-3 mb-6">
-        <button type="button" className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20">
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await loginWithGoogle();
+              navigate('/dashboard');
+            } catch (error) {
+              console.error(error);
+            }
+          }}
+          className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20"
+        >
           <i className="fab fa-google text-blue-300"></i>
         </button>
-        <button type="button" className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20">
-          <i className="fab fa-twitter text-blue-300"></i>
-        </button>
-        <button type="button" className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20">
-          <i className="fab fa-linkedin text-blue-300"></i>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await loginWithGithub();
+              navigate('/dashboard');
+            } catch (error) {
+              console.error(error);
+            }
+          }}
+          className="w-10 h-10 bg-white/10 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/20 transition-all duration-200 border border-white/20"
+        >
+          <i className="fab fa-github text-blue-300"></i>
         </button>
       </div>
 
@@ -78,15 +98,24 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         <div className="bg-white/10 backdrop-blur-sm p-3 rounded-l-lg border border-white/20 border-r-0">
           <i className="fa fa-lock text-blue-300 w-4"></i>
         </div>
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="flex-1 p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-r-lg text-white placeholder-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all"
-          required
-          disabled={isLoading}
-        />
+        <div className="flex-1 relative">
+          <input
+            type={showPassword ? "text" : "password"}
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-r-lg text-white placeholder-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all pr-10"
+            required
+            disabled={isLoading}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-300 hover:text-white transition-colors focus:outline-none"
+          >
+            <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+          </button>
+        </div>
       </div>
 
       <button
@@ -97,22 +126,27 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         {isLoading ? 'Signing In...' : 'Sign In'}
       </button>
 
-      {/* Demo Login Button */}
-      <button
-        type="button"
-        onClick={() => {
-          setEmail('demo@xceltrack.com');
-          setPassword('demo123');
-        }}
-        className="w-full mt-4 border border-blue-400/50 text-blue-300 py-3 px-6 rounded-xl font-bold uppercase tracking-wider hover:bg-blue-500/10 backdrop-blur-sm transition-all duration-200"
-      >
-        Fill Demo Credentials
-      </button>
+
 
       <div className="text-center mt-4">
-        <a href="#" className="text-blue-300 hover:text-blue-200 text-sm transition-colors">
+        <button
+          type="button"
+          onClick={async () => {
+            if (!email) {
+              setError('Please enter your email address to reset password.');
+              return;
+            }
+            try {
+              await resetPassword(email);
+              setError('Password reset email sent! Check your inbox.');
+            } catch (err) {
+              setError('Failed to send reset email. Please try again.');
+            }
+          }}
+          className="text-blue-300 hover:text-blue-200 text-sm transition-colors bg-transparent border-none cursor-pointer"
+        >
           Forgot your password?
-        </a>
+        </button>
       </div>
     </form>
   );

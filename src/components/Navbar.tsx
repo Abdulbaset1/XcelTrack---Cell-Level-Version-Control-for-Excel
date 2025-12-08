@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 interface NavbarProps {
   toggleSidebar: () => void;
@@ -8,6 +9,26 @@ interface NavbarProps {
 
 const Navbar: React.FC<NavbarProps> = ({ toggleSidebar, isSidebarOpen }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const getInitials = (name: string) => {
+    return name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await logout();
+      navigate('/');
+    } catch (error) {
+      console.error('Failed to sign out', error);
+    }
+  };
 
   return (
     <nav className="bg-white/30 backdrop-blur-xl shadow-lg border-b border-white/40 px-6 py-4 sticky top-0 z-40">
@@ -57,12 +78,16 @@ const Navbar: React.FC<NavbarProps> = ({ toggleSidebar, isSidebarOpen }) => {
               onClick={() => setIsProfileOpen(!isProfileOpen)}
               className="flex items-center space-x-3 p-2 rounded-lg hover:bg-sapphire-50 transition-all hover:shadow-[0_10px_30px_rgba(37,99,235,0.4)]"
             >
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white shadow-md">
-                <span className="font-semibold text-sm">AJ</span>
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white shadow-md overflow-hidden">
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt={user.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-semibold text-sm">{user?.name ? getInitials(user.name) : 'U'}</span>
+                )}
               </div>
               <div className="text-left">
-                <p className="text-sm font-medium text-[#051747]">Alex Johnson</p>
-                <p className="text-xs text-[#535F80]">Admin</p>
+                <p className="text-sm font-medium text-[#051747]">{user?.name || 'User'}</p>
+                <p className="text-xs text-[#535F80]">Member</p>
               </div>
               <svg className="w-4 h-4 text-[#535F80]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -71,20 +96,10 @@ const Navbar: React.FC<NavbarProps> = ({ toggleSidebar, isSidebarOpen }) => {
 
             {isProfileOpen && (
               <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-lg shadow-xl border border-sapphire-100 py-2 z-50">
-                <Link
-                  to="/profile"
-                  className="block px-4 py-2 text-sm text-[#535F80] hover:bg-sapphire-50 hover:text-[#051747] transition-colors"
+                <button
+                  onClick={handleSignOut}
+                  className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-lg"
                 >
-                  Your Profile
-                </Link>
-                <Link
-                  to="/settings"
-                  className="block px-4 py-2 text-sm text-[#535F80] hover:bg-sapphire-50 hover:text-[#051747] transition-colors"
-                >
-                  Settings
-                </Link>
-                <hr className="my-2 border-sapphire-100" />
-                <button className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
                   Sign out
                 </button>
               </div>
