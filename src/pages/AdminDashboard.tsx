@@ -1,498 +1,269 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import '../components/admin-dashboard.css';
-import CommitPage from './commit';
 import UsersPage from './users';
-import AnalyticsPage from './analytics';
-import SettingsPage from './adminSettings';
-import AdminProfile from './adminprofile';
-import { FaUsers, FaFile, FaBell, FaPencil, FaArrowUpFromBracket } from 'react-icons/fa6';
-import { FaGitAlt, FaCog, FaUser, FaSignOutAlt, FaSearch } from 'react-icons/fa';
-import { MdDashboard, MdSettings, MdLock, MdShowChart } from 'react-icons/md';
+import AuditLogs from './AuditLogs';
+import Compliance from './Compliance';
+import { FaUsers, FaClipboardList, FaShieldAlt, FaHdd } from 'react-icons/fa';
+import { FaSignOutAlt, FaSearch, FaBell } from 'react-icons/fa';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 // Type definitions
-interface Commit {
-    id: string;
-    user: string;
-    message: string;
-    timestamp: Date;
-    type: 'edit' | 'merge' | 'upload' | 'conflict';
-}
-
-interface Notification {
-    id: string;
-    title: string;
-    message: string;
-    timestamp: Date;
-    priority: 'high' | 'medium' | 'low';
-    read: boolean;
-}
-
 interface SystemStatus {
-    activeUsers: number;
-    totalCommits: number;
-    pendingMerges: number;
-    systemHealth: 'excellent' | 'good' | 'warning' | 'error';
+    serverStatus: 'Operational' | 'Degraded' | 'Down';
+    lastBackup: string;
+    securityAlerts: number;
+    activeSessions: number;
 }
 
 const AdminDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'overview' | 'commits' | 'users' | 'analytics' | 'settings' | 'profile'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'audit' | 'compliance'>('overview');
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [notifications, setNotifications] = useState<Notification[]>([]);
-    const [recentCommits, setRecentCommits] = useState<Commit[]>([]);
-    const [systemStatus, setSystemStatus] = useState<SystemStatus>({
-        activeUsers: 0,
-        totalCommits: 0,
-        pendingMerges: 0,
-        systemHealth: 'good'
-    });
-    const [filter, setFilter] = useState<'all' | Commit['type']>('all');
-    const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+    const { logout, user } = useAuth();
+    const navigate = useNavigate();
 
-    // Mock data - replace with actual API calls
-    useEffect(() => {
-        const mockNotifications: Notification[] = [
-            {
-                id: '1',
-                title: 'Merge Conflict Detected',
-                message: 'Conflict in financial_model.xlsx between user123 and user456',
-                timestamp: new Date(),
-                priority: 'high',
-                read: false
-            },
-            {
-                id: '2',
-                title: 'Major Edit Completed',
-                message: 'User789 made significant changes to budget_2024.xlsx',
-                timestamp: new Date(Date.now() - 300000),
-                priority: 'medium',
-                read: true
-            },
-            {
-                id: '3',
-                title: 'New User Registered',
-                message: 'User "analyst_john" joined the system',
-                timestamp: new Date(Date.now() - 600000),
-                priority: 'low',
-                read: true
-            }
-        ];
-
-        const mockCommits: Commit[] = [
-            {
-                id: 'c1',
-                user: 'user123',
-                message: 'Updated revenue projections for Q4 2024',
-                timestamp: new Date(),
-                type: 'edit'
-            },
-            {
-                id: 'c2',
-                user: 'user456',
-                message: 'Merged budget adjustments from development branch',
-                timestamp: new Date(Date.now() - 120000),
-                type: 'merge'
-            },
-            {
-                id: 'c3',
-                user: 'user789',
-                message: 'Uploaded new customer dataset',
-                timestamp: new Date(Date.now() - 300000),
-                type: 'upload'
-            }
-        ];
-
-        setNotifications(mockNotifications);
-        setRecentCommits(mockCommits);
-        setSystemStatus({
-            activeUsers: 42,
-            totalCommits: 1256,
-            pendingMerges: 3,
-            systemHealth: 'good'
-        });
-    }, []);
-
-    const markAsRead = (id: string) => {
-        setNotifications(notifications.map(notif =>
-            notif.id === id ? { ...notif, read: true } : notif
-        ));
+    // Mock System Status (FR9.1, FR9.2)
+    const systemStatus: SystemStatus = {
+        serverStatus: 'Operational',
+        lastBackup: 'Today, 04:00 AM',
+        securityAlerts: 0,
+        activeSessions: 12
     };
 
-    const filteredCommits = filter === 'all'
-        ? recentCommits
-        : recentCommits.filter(commit => commit.type === filter);
-
-    const unreadNotifications = notifications.filter(n => !n.read).length;
+    const handleSignOut = async () => {
+        try {
+            await logout();
+            navigate('/login');
+        } catch (error) {
+            console.error("Logout failed", error);
+        }
+    };
 
     const toggleSidebar = () => {
         setSidebarOpen(!sidebarOpen);
     };
 
-    const handleSignOut = () => {
-        // Add your sign out logic here
-        alert('Signing out...');
-        // In a real app, you would redirect to login page or clear session
-    };
+    // Styling constants for Light Sapphire Theme
+    const cardStyle = "bg-white backdrop-blur-lg border border-white/60 rounded-2xl shadow-xl p-6 transition-all duration-300 hover:shadow-[0_20px_50px_rgba(59,130,246,0.15)]";
+    const navItemStyle = (isActive: boolean) => `
+        w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200
+        ${isActive
+            ? 'bg-blue-600 text-white shadow-lg border border-white/10'
+            : 'text-blue-200 hover:bg-white/5 hover:text-white'}
+    `;
 
     return (
-        <div className={`admin-dashboard ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-            {/* Animated Background */}
-            <div className="animated-bg">
-                <div className="floating-shape shape-1"></div>
-                <div className="floating-shape shape-2"></div>
-                <div className="floating-shape shape-3"></div>
-            </div>
-
-            {/* Sidebar toggle */}
-            <button
-                className={`sidebar-toggle-btn ${sidebarOpen ? 'open' : 'closed'}`}
-                onClick={toggleSidebar}
-                aria-label="Toggle sidebar"
-            >
-                <div className={`hamburger-icon ${sidebarOpen ? 'open' : ''}`}>
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
-            </button>
-
+        <div className="flex h-screen bg-[#F3F4F6] overflow-hidden font-sans">
             {/* Sidebar */}
-            <div className={`sidebar-container ${sidebarOpen ? 'open' : 'closed'}`}>
-                <div className="sidebar-slider">
-                    <div className="sidebar-primary">
-                        <div className="sidebar-header">
-                            <div className="logo-container">
-                                <div className="logo-icon">
-                                    <img src="/imgs/logo.jpg" alt="XcelTrack Logo" className="logo-img" />
-                                </div>
-                                {sidebarOpen && <h2 className="logo-text">XcelTrack</h2>}
-                            </div>
+            {/* Sidebar */}
+            <aside
+                className={`bg-[#0D2440] border-r border-white/10 transition-all duration-300 z-20 flex flex-col
+                    ${sidebarOpen ? 'w-64' : 'w-20'}
+                `}
+            >
+                {/* Logo Area */}
+                <div className="h-20 flex items-center justify-center border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow-lg p-1">
+                            <img src="/logo.png" alt="XcelTrack Logo" className="w-full h-full object-contain" />
                         </div>
-                        <nav className="sidebar-nav">
-                            {/* MAIN Section */}
-                            <div className="nav-section">
-                                {sidebarOpen && <div className="nav-label">MAIN</div>}
-                                <button
-                                    className={`nav-item neu-hover ${activeTab === 'overview' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('overview')}
-                                >
-                                    {/* @ts-ignore */}
-                                    <MdDashboard className="nav-icon" />
-                                    {sidebarOpen && <span className="nav-text">Dashboard</span>}
-                                </button>
-                                <button
-                                    className={`nav-item neu-hover ${activeTab === 'commits' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('commits')}
-                                >
-                                    {/* @ts-ignore */}
-                                    <FaFile className="nav-icon" />
-                                    {sidebarOpen && <span className="nav-text">Commits</span>}
-                                </button>
-                                <button
-                                    className={`nav-item neu-hover ${activeTab === 'users' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('users')}
-                                >
-                                    {/* @ts-ignore */}
-                                    <FaUsers className="nav-icon" />
-                                    {sidebarOpen && <span className="nav-text">Users</span>}
-                                </button>
-                            </div>
-
-                            {/* SYSTEM Section */}
-                            <div className="nav-section">
-                                {sidebarOpen && <div className="nav-label">SYSTEM</div>}
-                                <button
-                                    className={`nav-item neu-hover ${activeTab === 'analytics' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('analytics')}
-                                >
-                                    {/* @ts-ignore */}
-                                    <MdShowChart className="nav-icon" />
-                                    {sidebarOpen && <span className="nav-text">Analytics</span>}
-                                </button>
-                                <button
-                                    className={`nav-item neu-hover ${activeTab === 'settings' ? 'active' : ''}`}
-                                    onClick={() => setActiveTab('settings')}
-                                >
-                                    {/* @ts-ignore */}
-                                    <MdSettings className="nav-icon" />
-                                    {sidebarOpen && <span className="nav-text">Settings</span>}
-                                </button>
-                            </div>
-
-                            {/* Sign Out Section */}
-                            <div className="nav-section" style={{ marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
-                                <button
-                                    className="nav-item neu-hover sign-out-btn"
-                                    onClick={handleSignOut}
-                                    title="Sign Out"
-                                >
-                                    {/* @ts-ignore */}
-                                    <FaSignOutAlt className="nav-icon" />
-                                    {sidebarOpen && <span className="nav-text">Sign Out</span>}
-                                </button>
-                            </div>
-                        </nav>
+                        {sidebarOpen && (
+                            <span className="text-xl font-bold text-white tracking-wide">
+                                XcelTrack
+                            </span>
+                        )}
                     </div>
                 </div>
-            </div>
 
-            {/* Main Content */}
-            <div className={`main-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
-                {/* Show CommitPage when commits tab is active, UsersPage when users active, otherwise show Dashboard */}
-                {activeTab === 'commits' ? (
-                    <CommitPage />
-                ) : activeTab === 'users' ? (
-                    <UsersPage />
-                ) : activeTab === 'analytics' ? (
-                    <AnalyticsPage />
-                ) : activeTab === 'settings' ? (
-                    <SettingsPage />
-                ) : activeTab === 'profile' ? (
-                    <AdminProfile />
-                ) : (
-                    <>
-                        {/* Top Header */}
-                        <header className="glass-header">
-                            <div className="header-content">
-                                <div className="header-left">
-                                    <h1 className="header-title">
-                                        <span className="title-glow">Admin Dashboard</span>
-                                    </h1>
-                                    <p className="header-subtitle">Welcome back, Admin! Here's what's happening today.</p>
-                                </div>
+                {/* Navigation */}
+                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                    {/* Main Menu */}
+                    {sidebarOpen && <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2 mt-4 px-4">Menu</div>}
 
-                                <div className="header-right">
-                                    <div className="search-container glass-input">
-                                        <input type="text" placeholder="Search..." className="search-input" />
-                                        <button className="search-btn neu-button">
-                                            {/* @ts-ignore */}
-                                            <FaSearch className="search-icon" />
-                                        </button>
-                                    </div>
+                    <button onClick={() => setActiveTab('overview')} className={navItemStyle(activeTab === 'overview')}>
+                        {/* @ts-ignore */}
+                        <FaHdd className="text-lg" />
+                        {sidebarOpen && <span>Overview</span>}
+                    </button>
 
-                                    <div className="header-actions">
-                                        <button className="action-btn neu-button pulse-glow">
-                                            {/* @ts-ignore */}
-                                            <FaBell className="action-icon" />
-                                            {unreadNotifications > 0 && (
-                                                <span className="notification-badge">{unreadNotifications}</span>
-                                            )}
-                                        </button>
-                                        <button
-                                            className="action-btn neu-button"
-                                            onClick={() => setActiveTab('settings')}
-                                            title="Settings"
-                                        >
-                                            {/* @ts-ignore */}
-                                            <FaCog className="action-icon" />
-                                        </button>
-                                        <button
-                                            className="user-avatar neu-avatar"
-                                            onClick={() => setActiveTab('profile')}
-                                            title="View Admin Profile"
-                                        >
-                                            <span>M</span>
-                                            <div className="avatar-status"></div>
-                                        </button>
-                                    </div>
-                                </div>
+                    <button onClick={() => setActiveTab('users')} className={navItemStyle(activeTab === 'users')}>
+                        {/* @ts-ignore */}
+                        <FaUsers className="text-lg" />
+                        {sidebarOpen && <span>User Management</span>}
+                    </button>
+
+                    <button onClick={() => setActiveTab('audit')} className={navItemStyle(activeTab === 'audit')}>
+                        {/* @ts-ignore */}
+                        <FaClipboardList className="text-lg" />
+                        {sidebarOpen && <span>Audit Logs</span>}
+                    </button>
+
+                    <button onClick={() => setActiveTab('compliance')} className={navItemStyle(activeTab === 'compliance')}>
+                        {/* @ts-ignore */}
+                        <FaShieldAlt className="text-lg" />
+                        {sidebarOpen && <span>Compliance Reports</span>}
+                    </button>
+                </nav>
+
+                {/* User & Logout */}
+                <div className="p-4 border-t border-white/10">
+                    <button
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-white/5 hover:text-red-300 transition-all"
+                    >
+                        {/* @ts-ignore */}
+                        <FaSignOutAlt className="text-lg" />
+                        {sidebarOpen && <span className="font-medium">Sign Out</span>}
+                    </button>
+                </div>
+            </aside>
+
+            {/* Main Content Area */}
+            <main className="flex-1 overflow-hidden flex flex-col relative w-full">
+                {/* Header */}
+                <header className="h-20 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center justify-between px-8 z-10 sticky top-0">
+                    <div className="flex items-center gap-4">
+                        <button onClick={toggleSidebar} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                        </button>
+                        <div>
+                            <h1 className="text-2xl font-bold text-[#051747]">
+                                {activeTab === 'overview' ? 'System Overview' :
+                                    activeTab === 'users' ? 'User Management' :
+                                        activeTab === 'audit' ? 'Audit Logs' : 'Compliance Reports'}
+                            </h1>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                        <div className="relative hidden md:block">
+                            {/* @ts-ignore */}
+                            <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Search..."
+                                className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 text-sm"
+                            />
+                        </div>
+                        <button className="relative p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+                            {/* @ts-ignore */}
+                            <FaBell className="text-lg" />
+                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+                        </button>
+                        <div className="flex items-center gap-3 pl-6 border-l border-gray-200">
+                            <div className="text-right hidden md:block">
+                                <p className="text-sm font-bold text-[#051747]">{user?.name || 'Admin User'}</p>
+                                <p className="text-xs text-gray-500">System Administrator</p>
                             </div>
-                        </header>
-
-                        {/* Stats Grid */}
-                        <div className="stats-grid">
-                            <div className={`stat-card neu-card ${hoveredCard === 'users' ? 'hover-glow' : ''}`}
-                                onMouseEnter={() => setHoveredCard('users')}
-                                onMouseLeave={() => setHoveredCard(null)}>
-                                <div className="stat-icon-container">
-                                    {/* @ts-ignore */}
-                                    <FaUsers className="stat-icon neu-icon" />
-                                    <div className="stat-pulse"></div>
-                                </div>
-                                <div className="stat-content">
-                                    <h3 className="stat-title">Active Users</h3>
-                                    <div className="stat-number">{systemStatus.activeUsers}</div>
-                                    <div className="stat-trend positive">↗ +12% this week</div>
-                                </div>
-                            </div>
-
-                            <div className="stat-card neu-card">
-                                <div className="stat-icon-container">
-                                    {/* @ts-ignore */}
-                                    <FaFile className="stat-icon neu-icon" />
-                                    <div className="stat-pulse"></div>
-                                </div>
-                                <div className="stat-content">
-                                    <h3 className="stat-title">Total Commits</h3>
-                                    <div className="stat-number">{systemStatus.totalCommits}</div>
-                                    <div className="stat-trend positive">↗ +8% today</div>
-                                </div>
-                            </div>
-
-                            <div className="stat-card neu-card">
-                                <div className="stat-icon-container">
-                                    {/* @ts-ignore */}
-                                    <FaGitAlt className="stat-icon neu-icon" />
-                                    <div className="stat-pulse pulse-warning"></div>
-                                </div>
-                                <div className="stat-content">
-                                    <h3 className="stat-title">Pending Merges</h3>
-                                    <div className="stat-number">{systemStatus.pendingMerges}</div>
-                                    <div className="stat-trend warning">⚠ Requires attention</div>
-                                </div>
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold border-2 border-white shadow-sm">
+                                {user?.name?.charAt(0) || 'A'}
                             </div>
                         </div>
+                    </div>
+                </header>
 
-                        <div className="content-grid">
-                            {/* Notifications Panel */}
-                            <div className="content-panel glass-panel">
-                                <div className="panel-header">
-                                    <h2 className="panel-title">Recent Notifications</h2>
-                                    <div className="panel-badge neu-badge">{unreadNotifications} unread</div>
-                                </div>
-                                <div className="notifications-list">
-                                    {notifications.map(notification => (
-                                        <div
-                                            key={notification.id}
-                                            className={`notification-item slide-in ${notification.priority} ${notification.read ? 'read' : 'unread'}`}
-                                            onClick={() => markAsRead(notification.id)}
-                                        >
-                                            <div className="notification-icon">
-                                                {notification.priority === 'high' ? (
-                                                    <div className="priority-high">!</div>
-                                                ) : notification.priority === 'medium' ? (
-                                                    <div className="priority-medium">•</div>
-                                                ) : (
-                                                    <div className="priority-low">i</div>
-                                                )}
-                                            </div>
-                                            <div className="notification-content">
-                                                <div className="notification-header">
-                                                    <span className="notification-title">{notification.title}</span>
-                                                    <span className="notification-time">
-                                                        {notification.timestamp.toLocaleTimeString()}
-                                                    </span>
-                                                </div>
-                                                <p className="notification-message">{notification.message}</p>
-                                            </div>
-                                            <div className="notification-arrow">→</div>
+                {/* Content Scroll Area */}
+                <div className="flex-1 overflow-y-auto p-8 relative">
+                    {/* Background decoration */}
+                    <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-blue-50/50 to-transparent -z-10 pointer-events-none"></div>
+
+                    {activeTab === 'overview' && (
+                        <div className="space-y-8 max-w-7xl mx-auto">
+                            {/* Stats Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div className={cardStyle}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="p-3 rounded-lg bg-green-100 text-green-600">
+                                            {/* @ts-ignore */}
+                                            <FaHdd className="text-xl" />
                                         </div>
-                                    ))}
+                                        <span className="px-2 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-full">Passed</span>
+                                    </div>
+                                    <h3 className="text-gray-500 text-sm font-medium">Server Status</h3>
+                                    <p className="text-2xl font-bold text-[#051747] mt-1">{systemStatus.serverStatus}</p>
+                                </div>
+
+                                <div className={cardStyle}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="p-3 rounded-lg bg-blue-100 text-blue-600">
+                                            {/* @ts-ignore */}
+                                            <FaUsers className="text-xl" />
+                                        </div>
+                                        <span className="text-green-500 text-xs font-bold">Live</span>
+                                    </div>
+                                    <h3 className="text-gray-500 text-sm font-medium">Active Sessions</h3>
+                                    <p className="text-2xl font-bold text-[#051747] mt-1">{systemStatus.activeSessions}</p>
+                                </div>
+
+                                <div className={cardStyle}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="p-3 rounded-lg bg-purple-100 text-purple-600">
+                                            {/* @ts-ignore */}
+                                            <FaClipboardList className="text-xl" />
+                                        </div>
+                                        <span className="text-xs text-gray-400">Total</span>
+                                    </div>
+                                    <h3 className="text-gray-500 text-sm font-medium">Audit Logs Today</h3>
+                                    <p className="text-2xl font-bold text-[#051747] mt-1">1,245</p>
+                                </div>
+
+                                <div className={cardStyle}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="p-3 rounded-lg bg-yellow-100 text-yellow-600">
+                                            {/* @ts-ignore */}
+                                            <FaShieldAlt className="text-xl" />
+                                        </div>
+                                        <span className="px-2 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-full">Secure</span>
+                                    </div>
+                                    <h3 className="text-gray-500 text-sm font-medium">Security Alerts</h3>
+                                    <p className="text-2xl font-bold text-[#051747] mt-1">{systemStatus.securityAlerts}</p>
                                 </div>
                             </div>
 
-                            {/* Activity Panel */}
-                            <div className="content-panel glass-panel">
-                                <div className="panel-header">
-                                    <h2 className="panel-title">Recent Activity</h2>
-                                    <select
-                                        value={filter}
-                                        onChange={(e) => setFilter(e.target.value as any)}
-                                        className="filter-select glass-input"
-                                    >
-                                        <option value="all">All Types</option>
-                                        <option value="edit">Edits</option>
-                                        <option value="merge">Merges</option>
-                                        <option value="upload">Uploads</option>
-                                        <option value="conflict">Conflicts</option>
-                                    </select>
-                                </div>
-                                <div className="activity-list">
-                                    {filteredCommits.map((commit, index) => (
-                                        <div
-                                            key={commit.id}
-                                            className="activity-item slide-in"
-                                            style={{ animationDelay: `${index * 0.1}s` }}
-                                        >
-                                            <div className="activity-icon-wrapper">
-                                                {commit.type === 'edit' ? (
-                                                    <>
-                                                        {/* @ts-ignore */}
-                                                        <FaPencil className="activity-icon edit" />
-                                                    </>
-                                                ) : commit.type === 'merge' ? (
-                                                    <>
-                                                        {/* @ts-ignore */}
-                                                        <FaGitAlt className="activity-icon merge" />
-                                                    </>
-                                                ) : commit.type === 'upload' ? (
-                                                    <>
-                                                        {/* @ts-ignore */}
-                                                        <FaArrowUpFromBracket className="activity-icon upload" />
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        {/* @ts-ignore */}
-                                                        <FaCog className="activity-icon conflict" />
-                                                    </>
-                                                )}
-                                            </div>
-                                            <div className="activity-content">
-                                                <div className="activity-header">
-                                                    <span className="activity-user">{commit.user}</span>
-                                                    <span className={`activity-type ${commit.type}`}>
-                                                        {commit.type}
-                                                    </span>
-                                                </div>
-                                                <p className="activity-message">{commit.message}</p>
-                                                <span className="activity-time">
-                                                    {commit.timestamp.toLocaleString()}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* System Overview Panel */}
-                        <div className="content-panel glass-panel full-width">
-                            <div className="panel-header">
-                                <h2 className="panel-title">System Overview</h2>
-                                <button className="view-all-btn">
-                                    View Detailed Report →
-                                </button>
-                            </div>
-                            <div className="system-overview">
-                                <div className="overview-item">
-                                    <h3>Storage Usage</h3>
-                                    <div className="progress-container">
-                                        <div className="progress-track neu-progress">
-                                            <div
-                                                className="progress-fill progress-glow"
-                                                style={{ width: '65%' }}
-                                            ></div>
-                                        </div>
-                                        <span>65% used (1.3GB of 2GB)</span>
+                            {/* Main Content Sections */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                <div className={`${cardStyle} h-96`}>
+                                    <h3 className="text-lg font-bold text-[#051747] mb-6">Platform Usage Trends</h3>
+                                    <div className="w-full h-64 bg-gray-50 rounded-xl flex items-center justify-center border border-gray-100 border-dashed">
+                                        <span className="text-gray-400 text-sm">Chart Visualization Placeholder</span>
                                     </div>
                                 </div>
 
-                                <div className="overview-item">
-                                    <h3>Active Sessions</h3>
-                                    <div className="sessions-display">
-                                        <div className="session-dots">
-                                            <div className="session-dot"></div>
-                                            <div className="session-dot"></div>
-                                            <div className="session-dot"></div>
-                                            <div className="session-dot"></div>
-                                            <div className="session-dot"></div>
-                                            <div className="session-dot"></div>
+                                <div className={`${cardStyle} h-96`}>
+                                    <h3 className="text-lg font-bold text-[#051747] mb-6">System Health Details</h3>
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                                            <div>
+                                                <p className="font-semibold text-gray-700">Database Backup</p>
+                                                <p className="text-xs text-gray-500">Last run: {systemStatus.lastBackup}</p>
+                                            </div>
+                                            <span className="text-green-600 font-bold text-sm">Completed</span>
                                         </div>
-                                        <div className="sessions-count">24</div>
-                                    </div>
-                                </div>
-
-                                <div className="overview-item">
-                                    <h3>Server Status</h3>
-                                    <div className="status-container">
-                                        <div className="status-indicator"></div>
-                                        <span>All servers operational</span>
+                                        <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                                            <div>
+                                                <p className="font-semibold text-gray-700">API Latency</p>
+                                                <p className="text-xs text-gray-500">Average response time</p>
+                                            </div>
+                                            <span className="text-blue-600 font-bold text-sm">45ms</span>
+                                        </div>
+                                        <div className="flex justify-between items-center p-4 bg-gray-50 rounded-xl">
+                                            <div>
+                                                <p className="font-semibold text-gray-700">Storage Authorization</p>
+                                                <p className="text-xs text-gray-500">Encryption status</p>
+                                            </div>
+                                            <span className="text-green-600 font-bold text-sm">Active (AES-256)</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </>
-                )}
-            </div>
+                    )}
+
+                    {activeTab === 'users' && <UsersPage />}
+                    {activeTab === 'audit' && <AuditLogs />}
+                    {activeTab === 'compliance' && <Compliance />}
+                </div>
+            </main>
         </div>
     );
 };
