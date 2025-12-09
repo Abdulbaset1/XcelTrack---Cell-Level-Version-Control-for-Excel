@@ -22,9 +22,13 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
     setIsLoading(true);
 
     try {
-      const success = await login(email, password);
-      if (success) {
-        navigate('/dashboard');
+      const user = await login(email, password);
+      if (user) {
+        if (user.role === 'Admin') {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
       }
     } catch (err) {
       setError('Login failed. Please try again.');
@@ -49,8 +53,12 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
           type="button"
           onClick={async () => {
             try {
-              await loginWithGoogle();
-              navigate('/dashboard');
+              const user = await loginWithGoogle();
+              if (user && user.role === 'Admin') {
+                navigate('/admin');
+              } else {
+                navigate('/dashboard');
+              }
             } catch (error) {
               console.error(error);
             }
@@ -63,8 +71,12 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
           type="button"
           onClick={async () => {
             try {
-              await loginWithGithub();
-              navigate('/dashboard');
+              const user = await loginWithGithub();
+              if (user && user.role === 'Admin') {
+                navigate('/admin');
+              } else {
+                navigate('/dashboard');
+              }
             } catch (error) {
               console.error(error);
             }
@@ -146,6 +158,17 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
           className="text-blue-300 hover:text-blue-200 text-sm transition-colors bg-transparent border-none cursor-pointer"
         >
           Forgot your password?
+        </button>
+      </div>
+
+      {/* DEBUG: Direct Admin Access Button */}
+      <div className="mt-6 pt-4 border-t border-white/10 text-center">
+        <button
+          type="button"
+          onClick={() => navigate('/test-admin')}
+          className="text-xs bg-yellow-500/20 text-yellow-200 border border-yellow-500/30 px-3 py-1.5 rounded hover:bg-yellow-500/30 transition-colors"
+        >
+          🐞 Debug: Load Admin Dashboard (Bypass Auth)
         </button>
       </div>
     </form>

@@ -18,8 +18,9 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const { signup, loginWithGoogle, loginWithGithub } = useAuth();
+  const { signup, loginWithGoogle, loginWithGithub, sendVerificationEmail } = useAuth();
   const navigate = useNavigate();
+  const [verificationSent, setVerificationSent] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -42,7 +43,8 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     try {
       const success = await signup(formData.name, formData.email, formData.password);
       if (success) {
-        navigate('/dashboard');
+        await sendVerificationEmail();
+        setVerificationSent(true);
       }
     } catch (err) {
       setError('Signup failed. Please try again.');
@@ -50,6 +52,27 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
       setIsLoading(false);
     }
   };
+
+  if (verificationSent) {
+    return (
+      <div className="w-full max-w-md text-center">
+        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+          <i className="fas fa-envelope text-green-500 text-3xl"></i>
+        </div>
+        <h2 className="text-2xl font-bold text-white mb-2">Check Your Email</h2>
+        <p className="text-blue-200 mb-6">
+          We've sent a verification link to <strong>{formData.email}</strong>.<br />
+          Please click the link to verify your account.
+        </p>
+        <button
+          onClick={() => navigate('/login')}
+          className="bg-white/10 hover:bg-white/20 text-white py-2 px-6 rounded-lg transition-colors border border-white/20"
+        >
+          Return to Login
+        </button>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-md">

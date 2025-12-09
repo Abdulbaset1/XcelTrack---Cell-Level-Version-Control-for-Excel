@@ -8,6 +8,8 @@ import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
+import AdminDashboard from './pages/AdminDashboard';
+import AdminRoute from './components/AdminRoute';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -15,10 +17,18 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 };
 
-// Public Route Component (redirect to dashboard if already authenticated)
+// PublicRoute Component (redirect based on role if already authenticated)
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
-  return !isAuthenticated ? <>{children}</> : <Navigate to="/dashboard" />;
+  const { isAuthenticated, user } = useAuth();
+
+  if (isAuthenticated) {
+    if (user?.role === 'Admin') {
+      return <Navigate to="/admin" />;
+    }
+    return <Navigate to="/dashboard" />;
+  }
+
+  return <>{children}</>;
 };
 
 function AppRoutes() {
@@ -40,7 +50,7 @@ function AppRoutes() {
           <AuthForm />
         </PublicRoute>
       } />
-      
+
       {/* Protected Routes - With Sidebar Layout */}
       <Route path="/dashboard" element={
         <ProtectedRoute>
@@ -63,7 +73,17 @@ function AppRoutes() {
           </Layout>
         </ProtectedRoute>
       } />
-      
+
+      {/* Admin Routes */}
+      <Route path="/admin" element={
+        <AdminRoute>
+          <AdminDashboard />
+        </AdminRoute>
+      } />
+
+      {/* TEMP: Debug Route to bypass Auth */}
+      <Route path="/test-admin" element={<AdminDashboard />} />
+
       {/* Redirect unknown routes */}
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

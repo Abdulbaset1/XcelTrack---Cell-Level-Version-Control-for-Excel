@@ -54,8 +54,8 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen py-8 px-8 pl-64 bg-gray-50">
-      <div className="max-w-4xl relative z-0">
+    <div className="w-full max-w-7xl mx-auto">
+      <div className="relative z-0">
         {/* Header Navigation */}
         {/* Glassmorphism Card - Dark blue shadow on hover */}
         <div className="bg-white/90 backdrop-blur-lg border border-white/60 rounded-2xl shadow-xl p-8 hover:shadow-[0_20px_50px_rgba(30,64,175,0.4)] transition-all duration-300">
