@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FaTrash, FaPen, FaKey, FaBan } from 'react-icons/fa6';
+import { FaTrash, FaPen, FaKey } from 'react-icons/fa6';
 import { FaShieldAlt } from 'react-icons/fa';
 import { FaPlus } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,7 +8,7 @@ interface User {
     id: string;
     name: string;
     email: string;
-    role: 'admin' | 'analyst' | 'viewer';
+    role: 'admin' | 'user';
     status: 'active' | 'inactive' | 'pending';
     joinDate: string;
     lastActive: string;
@@ -20,11 +20,19 @@ const UsersPage: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
 
     // Form and Editing State
-    const [formData, setFormData] = useState({ name: '', email: '', password: 'password123', role: 'analyst' as const, country: '' });
+    const [formData, setFormData] = useState({ name: '', email: '', password: 'password123', role: 'user' as const, country: '' });
     const [isEditing, setIsEditing] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
     const [searchTerm, setSearchTerm] = useState('');
+
+    // Toast Notification State
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+    const showToast = (message: string, type: 'success' | 'error') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 4000); // Auto-dismiss after 4 seconds
+    };
 
     React.useEffect(() => {
         fetchUsers();
@@ -75,12 +83,12 @@ const UsersPage: React.FC = () => {
     const handleCancelEdit = () => {
         setIsEditing(false);
         setEditingUserId(null);
-        setFormData({ name: '', email: '', password: 'password123', role: 'analyst', country: '' });
+        setFormData({ name: '', email: '', password: 'password123', role: 'user', country: '' });
     };
 
     const handleFormSubmit = async () => {
         if (!formData.name || !formData.email) {
-            alert('Please fill in all fields');
+            showToast('Please fill in all required fields', 'error');
             return;
         }
 
@@ -115,14 +123,20 @@ const UsersPage: React.FC = () => {
             if (response.ok) {
                 fetchUsers();
                 handleCancelEdit(); // Reset form
-                alert(isEditing ? 'User updated successfully' : 'User added successfully');
+                showToast(
+                    isEditing ? 'User updated successfully' : 'User created successfully',
+                    'success'
+                );
             } else {
                 const data = await response.json();
-                alert(`Failed to ${isEditing ? 'update' : 'add'} user: ${data.error}`);
+                showToast(
+                    `Failed to ${isEditing ? 'update' : 'create'} user: ${data.error}`,
+                    'error'
+                );
             }
         } catch (error) {
             console.error("Error saving user:", error);
-            alert("Error saving user");
+            showToast('An error occurred while saving the user', 'error');
         }
     };
 
@@ -135,8 +149,9 @@ const UsersPage: React.FC = () => {
             });
             if (response.ok) {
                 setUsers(prev => prev.filter(u => u.id !== id));
+                showToast('User deleted successfully', 'success');
             } else {
-                alert("Failed to delete user");
+                showToast('Failed to delete user', 'error');
             }
         } catch (error) {
             console.error("Error deleting user:", error);
@@ -148,25 +163,75 @@ const UsersPage: React.FC = () => {
         if (!window.confirm(`Send password reset email to ${email}?`)) return;
         try {
             await resetPassword(email);
-            alert(`Password reset email sent to ${email}`);
+            showToast(`Password reset email sent to ${email}`, 'success');
         } catch (error) {
             console.error("Error sending reset email:", error);
-            alert("Failed to send reset email");
+            showToast('Failed to send password reset email', 'error');
         }
     };
 
     const getRoleColor = (role: string) => {
         switch (role) {
             case 'admin': return '#ef4444';
-            case 'analyst': return '#3b82f6';
-            case 'viewer': return '#8b5cf6';
+            case 'user': return '#3b82f6';
             default: return '#6b7280';
         }
     };
 
 
     return (
-        <div className="users-page" style={{ padding: '0' }}>
+        <div className="users-page" style={{ padding: '0', position: 'relative' }}>
+            {/* Toast Notification */}
+            {toast && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: '20px',
+                        right: '20px',
+                        zIndex: 9999,
+                        padding: '1rem 1.5rem',
+                        borderRadius: '10px',
+                        background: toast.type === 'success'
+                            ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                            : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: 'white',
+                        boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        minWidth: '300px',
+                        animation: 'slideInRight 0.3s ease-out',
+                        fontWeight: 500,
+                    }}
+                >
+                    {toast.type === 'success' ? (
+                        <div style={{
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '50%',
+                            border: '2px solid white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '12px',
+                            fontWeight: 'bold'
+                        }}>✓</div>
+                    ) : (
+                        <div style={{
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '50%',
+                            border: '2px solid white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '14px',
+                            fontWeight: 'bold'
+                        }}>✕</div>
+                    )}
+                    <span>{toast.message}</span>
+                </div>
+            )}
             {/* Header */}
             <header className="glass-header">
                 <div className="header-content">
@@ -227,19 +292,6 @@ const UsersPage: React.FC = () => {
                                         </span>
                                     </div>
 
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                                        <div
-                                            style={{
-                                                width: '8px',
-                                                height: '8px',
-                                                borderRadius: '50%',
-                                                background: '#10b981',
-                                            }}
-                                        ></div>
-                                        <span style={{ fontSize: '0.9rem', color: '#10b981', fontWeight: 500 }}>
-                                            Active
-                                        </span>
-                                    </div>
 
                                     <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
                                         Joined: {user.joinDate}
@@ -305,7 +357,7 @@ const UsersPage: React.FC = () => {
                 <div className="content-panel glass-panel" style={{ height: 'fit-content', minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
                         {/* @ts-ignore */}
-                        <FaPlus size={16} />
+                        {isEditing ? <FaPen size={16} /> : <FaPlus size={16} />}
                         <h3 style={{ margin: 0 }}>{isEditing ? 'Edit User' : 'Add New User'}</h3>
                     </div>
 
@@ -342,8 +394,7 @@ const UsersPage: React.FC = () => {
                                 className="glass-input"
                                 style={{ width: '100%', marginTop: '0.25rem' }}
                             >
-                                <option value="viewer">Viewer</option>
-                                <option value="analyst">Analyst</option>
+                                <option value="user">User</option>
                                 <option value="admin">Admin</option>
                             </select>
                         </div>
@@ -351,6 +402,22 @@ const UsersPage: React.FC = () => {
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <button
                                 onClick={handleFormSubmit}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(47, 94, 154, 0.4)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(47, 94, 154, 0.3)';
+                                }}
+                                onMouseDown={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0) scale(0.98)';
+                                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(47, 94, 154, 0.3)';
+                                }}
+                                onMouseUp={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px) scale(1)';
+                                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(47, 94, 154, 0.4)';
+                                }}
                                 style={{
                                     flex: 1,
                                     padding: '0.75rem',
@@ -361,7 +428,7 @@ const UsersPage: React.FC = () => {
                                     cursor: 'pointer',
                                     fontWeight: 600,
                                     marginTop: '0.5rem',
-                                    transition: 'all .3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    transition: 'all .15s cubic-bezier(0.4, 0, 0.2, 1)',
                                     boxShadow: '0 4px 12px rgba(47, 94, 154, 0.3)',
                                 }}
                             >
@@ -387,15 +454,6 @@ const UsersPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Stats */}
-                    <hr style={{ margin: '1rem 0', border: 'none', borderTop: '1px solid var(--border-soft)' }} />
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                            <span>Total Users:</span>
-                            <strong>{users.length}</strong>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

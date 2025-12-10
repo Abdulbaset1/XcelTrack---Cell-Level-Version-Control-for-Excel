@@ -77,8 +77,6 @@ const AdminDashboard: React.FC = () => {
 
                 {/* Navigation */}
                 <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                    {/* Main Menu */}
-                    {sidebarOpen && <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-2 mt-4 px-4">Menu</div>}
 
                     <button onClick={() => setActiveTab('overview')} className={navItemStyle(activeTab === 'overview')}>
                         {/* @ts-ignore */}

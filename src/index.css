@@ -265,3 +265,15 @@ input:-webkit-autofill:active {
 .btn-watch-demo:hover {
     color: white;
 }
+
+/* Toast Notification Animation */
+@keyframes slideInRight {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}

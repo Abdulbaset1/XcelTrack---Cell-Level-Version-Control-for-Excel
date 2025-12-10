@@ -16,17 +16,41 @@ require('dotenv').config();
 */
 
 try {
-    // Check if SERVICE_ACCOUNT_KEY env var exists (contains the JSON string)
+    // 1. Check if SERVICE_ACCOUNT_KEY env var exists (JSON string)
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
         const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
         });
         console.log("Firebase Admin initialized with SERVICE_ACCOUNT env var.");
-    } else {
-        // Fallback: try default or generic init (may fail locally without manual setup)
-        admin.initializeApp();
-        console.log("Firebase Admin initialized with default credentials.");
+    }
+    // 2. Check for serviceAccountKey.json file in the same directory
+    else {
+        const path = require('path');
+        const fs = require('fs');
+        const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+        console.log("Checking for Service Account at:", serviceAccountPath);
+
+        if (fs.existsSync(serviceAccountPath)) {
+            console.log("Found serviceAccountKey.json");
+            try {
+                const serviceAccount = require(serviceAccountPath);
+                admin.initializeApp({
+                    credential: admin.credential.cert(serviceAccount)
+                });
+                console.log("Firebase Admin initialized with serviceAccountKey.json file.");
+            } catch (err) {
+                console.error("Error loading serviceAccountKey.json:", err);
+                // Fallback catch to not crash entirely, but init will fail
+                throw err;
+            }
+        } else {
+            // 3. Last resort: Default credentials (fails locally usually)
+            console.warn("WARNING: No 'serviceAccountKey.json' found in server/ directory and no FIREBASE_SERVICE_ACCOUNT env var set.");
+            console.warn("Admin SDK functionality (create/update user) will likely FAIL.");
+            admin.initializeApp();
+            console.log("Firebase Admin initialized with default credentials (ADC).");
+        }
     }
 } catch (error) {
     console.error("Firebase Admin initialization failed:", error);

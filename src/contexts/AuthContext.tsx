@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         // Map FirebaseUser to our User interface
-        const initialUser: User = {
+        let userData: User = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
           displayName: firebaseUser.displayName,
@@ -78,21 +78,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           createdAt: firebaseUser.metadata.creationTime,
         };
 
-        // Fetch additional user details from Firestore
+        // Fetch role from PostgreSQL backend (source of truth)
+        try {
+          const roleResponse = await fetch(`http://localhost:5000/api/user-role/${firebaseUser.uid}`);
+          if (roleResponse.ok) {
+            const roleData = await roleResponse.json();
+            userData.role = roleData.role;
+          }
+        } catch (error) {
+          console.error("Error fetching user role from backend:", error);
+        }
+
+        // Fetch additional user details from Firestore (country, etc.)
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         try {
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
-            const userData = userDoc.data();
-            // Merge Firestore data (role, country, etc.)
-            setUser({ ...initialUser, ...userData });
-          } else {
-            setUser(initialUser);
+            const firestoreData = userDoc.data();
+            // Merge Firestore data but keep role from PostgreSQL
+            const { role: _, ...otherData } = firestoreData;
+            userData = { ...userData, ...otherData };
           }
         } catch (error) {
-          console.error("Error fetching user data:", error);
-          setUser(initialUser);
+          console.error("Error fetching user data from Firestore:", error);
         }
+
+        // Set user state only after all data is fetched
+        setUser(userData);
       } else {
         setUser(null);
       }
