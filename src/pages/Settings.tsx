@@ -88,60 +88,7 @@ const Settings: React.FC = () => {
           </div>
 
           <div className="space-y-10">
-            {/* Version Control Settings */}
-            <section>
-              <h2 className="text-xl font-bold text-[#051747] mb-6 flex items-center border-b-2 border-gray-300 pb-3">
-                <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Version Control
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-[#535F80]">Auto-Save Interval</label>
-                  <select
-                    value={settings.autoSaveInterval}
-                    onChange={(e) => handleChange('autoSaveInterval', e.target.value)}
-                    className="w-full bg-white border border-gray-300 text-[#051747] text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                  >
-                    <option value="5">Every 5 minutes</option>
-                    <option value="10">Every 10 minutes</option>
-                    <option value="30">Every 30 minutes</option>
-                    <option value="60">Every hour</option>
-                  </select>
-                  <p className="text-xs text-gray-500">How often to automatically save your Excel file versions.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-[#535F80]">Diff Highlight Color</label>
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="color"
-                      value={settings.diffHighlightColor}
-                      onChange={(e) => handleChange('diffHighlightColor', e.target.value)}
-                      className="h-10 w-20 cursor-pointer rounded border border-gray-300"
-                    />
-                    <span className="text-sm text-[#051747] font-medium">{settings.diffHighlightColor}</span>
-                  </div>
-                  <p className="text-xs text-gray-500">Color used to highlight cell changes in version comparison.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-[#535F80]">Version History Limit</label>
-                  <input
-                    type="number"
-                    value={settings.versionHistoryLimit}
-                    onChange={(e) => handleChange('versionHistoryLimit', parseInt(e.target.value))}
-                    className="w-full bg-white border border-gray-300 text-[#051747] text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    min="1"
-                    max="5"
-                  />
-                  <p className="text-xs text-gray-500">Maximum number of versions to keep per file.</p>
-                </div>
-              </div>
-            </section>
-
-            {/* Notification Settings */}
+            {/* Notifications Settings */}
             <section>
               <h2 className="text-xl font-bold text-[#051747] mb-6 flex items-center border-b-2 border-gray-300 pb-3">
                 <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
