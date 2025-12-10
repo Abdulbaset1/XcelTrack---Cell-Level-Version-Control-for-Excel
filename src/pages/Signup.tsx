@@ -11,7 +11,8 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     name: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    country: ''
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -22,7 +23,14 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
   const navigate = useNavigate();
   const [verificationSent, setVerificationSent] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // List of countries
+  const countries = [
+    "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "India", "China", "Japan", "Brazil",
+    "Pakistan", "Mexico", "Italy", "Spain", "Netherlands", "Switzerland", "Sweden", "Norway", "Denmark", "Finland",
+    "Russia", "South Korea", "Singapore", "New Zealand", "Ireland", "South Africa", "UAE", "Saudi Arabia", "Turkey", "Egypt"
+  ];
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -41,7 +49,12 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     setIsLoading(true);
 
     try {
-      const success = await signup(formData.name, formData.email, formData.password);
+      if (!formData.country) {
+        setError('Please select a country');
+        setIsLoading(false);
+        return;
+      }
+      const success = await signup(formData.name, formData.email, formData.password, formData.country);
       if (success) {
         await sendVerificationEmail();
         setVerificationSent(true);
@@ -135,6 +148,31 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
         />
       </div>
 
+      {/* Country Input */}
+      <div className="flex items-center w-full mb-4">
+        <div className="bg-white/10 backdrop-blur-sm p-3 rounded-l-lg border border-white/20 border-r-0">
+          <i className="fa fa-globe text-blue-300 w-4"></i>
+        </div>
+        <div className="flex-1 relative">
+          <select
+            name="country"
+            value={formData.country}
+            onChange={handleChange}
+            className="w-full p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-r-lg text-white placeholder-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all appearance-none"
+            required
+            disabled={isLoading}
+          >
+            <option value="" className="text-gray-500 bg-[#1a237e]">Select Country</option>
+            {countries.map((country) => (
+              <option key={country} value={country} className="text-white bg-[#1a237e]">{country}</option>
+            ))}
+          </select>
+          <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+            <i className="fas fa-chevron-down text-blue-300 text-xs"></i>
+          </div>
+        </div>
+      </div>
+
       {/* Email Input */}
       <div className="flex items-center w-full mb-4">
         <div className="bg-white/10 backdrop-blur-sm p-3 rounded-l-lg border border-white/20 border-r-0">
@@ -211,7 +249,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
       >
         {isLoading ? 'Creating Account...' : 'Sign Up'}
       </button>
-    </form>
+    </form >
   );
 };
 
