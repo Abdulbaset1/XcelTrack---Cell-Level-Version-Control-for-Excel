@@ -31,7 +31,7 @@ export interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<User | null>;
-  signup: (name: string, email: string, password: string, country?: string) => Promise<boolean>;
+  signup: (name: string, email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   loginWithGoogle: () => Promise<User | null>;
   loginWithGithub: () => Promise<User | null>;
@@ -136,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
-  const signup = async (name: string, email: string, password: string, country?: string): Promise<boolean> => {
+  const signup = async (name: string, email: string, password: string): Promise<boolean> => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
@@ -146,7 +146,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setDoc(doc(db, 'users', user.uid), {
         name,
         email,
-        country: country || '',
         role: 'User',
         createdAt: new Date().toISOString()
       });
