@@ -42,31 +42,26 @@ app.post('/api/sync-user', async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Determine Role
-    let role = 'user';
-    if (email === 'abdulbaset1878@gmail.com' && name === 'Abdul Basit') {
-        role = 'Admin';
-    }
-
     try {
         // Check if user exists
         const checkRes = await pool.query('SELECT * FROM users WHERE firebase_uid = $1', [uid]);
 
         if (checkRes.rows.length > 0) {
-            // User exists, maybe update? For now just return success.
-            return res.status(200).json({ message: 'User already synced' });
+            // User exists, return existing user data
+            return res.status(200).json({ message: 'User already synced', user: checkRes.rows[0] });
         }
 
-        // Insert new user
+        // Insert new user with default 'user' role
+        // Admin role should be assigned manually in the database or through admin panel
         const insertQuery = `
       INSERT INTO users (firebase_uid, email, name, role)
       VALUES ($1, $2, $3, $4)
       RETURNING *
     `;
-        const values = [uid, email, name, role];
+        const values = [uid, email, name, 'user']; // Default role is 'user'
         const result = await pool.query(insertQuery, values);
 
-        console.log(`User synced: ${email} as ${role}`);
+        console.log(`User synced: ${email} as ${result.rows[0].role}`);
         res.status(201).json({ user: result.rows[0] });
 
     } catch (error) {
@@ -93,9 +88,40 @@ app.get('/api/user-role/:uid', async (req, res) => {
     }
 });
 
+
 // --- Admin User Management Endpoints ---
 
-// Get all users (from Postgres)
+// Middleware to verify admin role
+const verifyAdmin = async (req, res, next) => {
+    const { uid } = req.body; // For POST/PUT requests
+    const uidParam = req.params.uid; // For GET/DELETE requests
+    const userUid = uid || uidParam;
+
+    if (!userUid) {
+        return res.status(401).json({ error: 'Unauthorized: User ID required' });
+    }
+
+    try {
+        const result = await pool.query('SELECT role FROM users WHERE firebase_uid = $1', [userUid]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const userRole = result.rows[0].role.toLowerCase();
+
+        if (userRole !== 'admin') {
+            return res.status(403).json({ error: 'Forbidden: Admin access required' });
+        }
+
+        next();
+    } catch (error) {
+        console.error('Error verifying admin role:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+// Get all users (from Postgres) - Public for now, but you can add verifyAdmin if needed
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');

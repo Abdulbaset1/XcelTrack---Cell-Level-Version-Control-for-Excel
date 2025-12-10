@@ -14,8 +14,8 @@ const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
     }
 
     // Check if user is logged in and has Admin role
-    // Note: The role is fetched from Postgres and stored in user.role
-    if (!user || user.role !== 'Admin') {
+    // Role check is case-insensitive to handle 'admin', 'Admin', etc.
+    if (!user || user.role?.toLowerCase() !== 'admin') {
         return <Navigate to="/dashboard" replace />;
     }
 

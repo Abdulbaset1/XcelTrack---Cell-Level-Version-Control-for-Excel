@@ -1,3 +1,31 @@
+# XcelTrack
+
+## Full Stack Setup
+
+This project consists of a React Frontend and an Express/Postgres Backend. You must run both for the application to function correctly.
+
+### 1. Start the Backend Server
+The backend connects to PostgreSQL and handles user synchronization.
+
+```bash
+cd server
+npm install  # (First time only)
+npm start
+```
+*Runs on [http://localhost:5000](http://localhost:5000)*
+
+> **Note:** For full Admin features (Add User/Sync), you must provide a valid Firebase Service Account key in `server/.env` or as a file. Without it, the server uses default credentials which may fail locally.
+
+### 2. Start the Frontend
+Open a new terminal:
+```bash
+# (from root folder)
+npm start
+```
+*Runs on [http://localhost:3000](http://localhost:3000)*
+
+---
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
