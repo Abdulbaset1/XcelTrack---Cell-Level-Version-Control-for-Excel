@@ -299,11 +299,16 @@ app.put('/api/admin/users/:uid', async (req, res) => {
     const { email, name, role } = req.body;
 
     try {
-        // 1. Update Firebase Auth
-        await admin.auth().updateUser(uid, {
-            email,
-            displayName: name,
-        });
+        // 1. Update Firebase Auth (Best effort)
+        try {
+            await admin.auth().updateUser(uid, {
+                email,
+                displayName: name,
+            });
+        } catch (firebaseError) {
+            console.warn('Warning: Failed to update Firebase Auth user:', firebaseError.message);
+            // Continue to update DB even if Firebase fails
+        }
 
         // 2. Update Postgres
         const updateQuery = `
@@ -331,8 +336,13 @@ app.delete('/api/admin/users/:uid', async (req, res) => {
     const { uid } = req.params;
 
     try {
-        // 1. Delete from Firebase Auth
-        await admin.auth().deleteUser(uid);
+        // 1. Delete from Firebase Auth (Best effort)
+        try {
+            await admin.auth().deleteUser(uid);
+        } catch (firebaseError) {
+            console.warn('Warning: Failed to delete Firebase Auth user:', firebaseError.message);
+            // Continue to delete from DB
+        }
 
         // 2. Delete from Postgres
         const result = await pool.query('DELETE FROM users WHERE firebase_uid = $1 RETURNING *', [uid]);

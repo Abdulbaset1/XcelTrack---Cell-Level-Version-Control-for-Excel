@@ -129,21 +129,7 @@ const Settings: React.FC = () => {
                   </label>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-[#051747]">Weekly Digest</p>
-                    <p className="text-sm text-[#535F80]">Receive a weekly summary of your activity</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={settings.weeklyDigest}
-                      onChange={(e) => handleChange('weeklyDigest', e.target.checked)}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
+
               </div>
             </section>
 
@@ -156,21 +142,6 @@ const Settings: React.FC = () => {
                 Security & Privacy
               </h2>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-[#051747]">Two-Factor Authentication</p>
-                    <p className="text-sm text-[#535F80]">Add an extra layer of security to your account</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={settings.twoFactorAuth}
-                      onChange={(e) => handleChange('twoFactorAuth', e.target.checked)}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
 
                 <div className="flex items-center justify-between">
                   <div>
