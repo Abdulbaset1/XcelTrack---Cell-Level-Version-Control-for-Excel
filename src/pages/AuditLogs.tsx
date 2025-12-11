@@ -105,6 +105,8 @@ const AuditLogsPage: React.FC = () => {
                     <div style={{ display: 'flex', gap: '1rem', flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, maxWidth: '400px' }}>
                             <div className="glass-input" style={{ display: 'flex', alignItems: 'center', padding: '0.5rem 1rem', width: '100%' }}>
+                                {/* @ts-ignore */}
+                                <FaSearch color="var(--text-secondary)" style={{ marginRight: '0.5rem' }} />
                                 <input
                                     type="text"
                                     placeholder="Search logs..."
@@ -112,8 +114,6 @@ const AuditLogsPage: React.FC = () => {
                                     onChange={e => setSearchTerm(e.target.value)}
                                     style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', color: 'var(--text-primary)' }}
                                 />
-                                {/* @ts-ignore */}
-                                <FaSearch color="var(--text-secondary)" style={{ marginLeft: '0.5rem' }} />
                             </div>
                         </div>
 
@@ -219,11 +219,6 @@ const AuditLogsPage: React.FC = () => {
                             </div>
                         )}
                     </div>
-                </div>
-
-                {/* Audit Info Footer */}
-                <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '1rem' }}>
-                    <p>System logs are retained for 7 years in compliance with regulatory standards (FR9.5).</p>
                 </div>
 
             </div>

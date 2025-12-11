@@ -15,12 +15,7 @@ const Landing: React.FC = () => {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center space-x-3 hover:opacity-90 transition-opacity">
-            <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-600 via-purple-600 to-purple-700 rounded-xl shadow-lg border border-white/20">
-              <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2zm0 2v16h12V10h-6V4H6zm8 4h4l-4-4v4z" />
-                <path d="M8 12h8v2H8v-2zm0 4h8v2H8v-2zm0 4h5v2H8v-2z" fill="white" />
-              </svg>
-            </div>
+            <img src="/logo.png" alt="XcelTrack Logo" className="w-10 h-10 rounded-xl shadow-lg border border-white/20" />
             <div className="flex flex-col">
               <span className="text-xl font-bold text-[#051747]">
                 XcelTrack

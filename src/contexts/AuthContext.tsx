@@ -116,14 +116,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string): Promise<User | null> => {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    // We rely on onAuthStateChanged to update state, but we return the user for the UI
-    // We might need to fetch the extra data immediately if the UI depends on it synchronously
-    // but usually the listener handles it.
-    // To satisfy the return type with "Name" and "Role", we might need a quick fetch or just return basic info.
-
     const firebaseUser = userCredential.user;
-    // Quick partial fetch for role if urgent? 
-    // For now, return a basic mapped user. The Context `user` state will update shortly looking correct.
+
+    // Fetch role explicitly to ensure redirect logic works
+    let role = 'User'; // Default
+    try {
+      console.log(`Fetching role for UID: ${firebaseUser.uid}`);
+      const roleResponse = await fetch(`http://localhost:5000/api/user-role/${firebaseUser.uid}`);
+      console.log('Role fetch status:', roleResponse.status);
+
+      if (roleResponse.ok) {
+        const roleData = await roleResponse.json();
+        console.log('Role data received from backend:', roleData);
+        role = roleData.role;
+      } else {
+        console.warn('Role fetch failed or not ok');
+      }
+    } catch (error) {
+      console.error("Error fetching role during login:", error);
+    }
+
     return {
       uid: firebaseUser.uid,
       email: firebaseUser.email,
@@ -131,8 +143,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       name: firebaseUser.displayName || '',
       photoURL: firebaseUser.photoURL,
       emailVerified: firebaseUser.emailVerified,
-      createdAt: firebaseUser.metadata.creationTime
-      // Role might be missing here until state update, assume UI handles it or waits for state
+      createdAt: firebaseUser.metadata.creationTime,
+      role: role
     };
   };
 
@@ -177,6 +189,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Ensure doc exists
     const userDocRef = doc(db, 'users', user.uid);
     const userDoc = await getDoc(userDocRef);
+
+    let role = 'User';
+
     if (!userDoc.exists()) {
       await setDoc(userDocRef, {
         name: user.displayName || 'User',
@@ -193,7 +208,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         emailVerified: user.emailVerified,
         name: user.displayName || 'User'
       }, user.displayName || 'User');
+    } else {
+      // Fetch existing role if not new
+      try {
+        const roleResponse = await fetch(`http://localhost:5000/api/user-role/${user.uid}`);
+        if (roleResponse.ok) {
+          const roleData = await roleResponse.json();
+          role = roleData.role;
+        }
+      } catch (error) {
+        console.error("Error fetching role during google login:", error);
+      }
     }
+
     return {
       uid: user.uid,
       email: user.email,
@@ -201,7 +228,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       name: user.displayName || '',
       photoURL: user.photoURL,
       emailVerified: user.emailVerified,
-      createdAt: user.metadata.creationTime
+      createdAt: user.metadata.creationTime,
+      role: role
     };
   };
 
@@ -211,6 +239,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Ensure doc exists
     const userDocRef = doc(db, 'users', user.uid);
     const userDoc = await getDoc(userDocRef);
+
+    let role = 'User';
+
     if (!userDoc.exists()) {
       await setDoc(userDocRef, {
         name: user.displayName || 'User',
@@ -227,7 +258,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         emailVerified: user.emailVerified,
         name: user.displayName || 'User'
       }, user.displayName || 'User');
+    } else {
+      // Fetch existing role if not new
+      try {
+        const roleResponse = await fetch(`http://localhost:5000/api/user-role/${user.uid}`);
+        if (roleResponse.ok) {
+          const roleData = await roleResponse.json();
+          role = roleData.role;
+        }
+      } catch (error) {
+        console.error("Error fetching role during github login:", error);
+      }
     }
+
     return {
       uid: user.uid,
       email: user.email,
@@ -235,7 +278,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       name: user.displayName || '',
       photoURL: user.photoURL,
       emailVerified: user.emailVerified,
-      createdAt: user.metadata.creationTime
+      createdAt: user.metadata.creationTime,
+      role: role
     };
   };
 

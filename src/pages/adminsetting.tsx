@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { FaSave, FaKey } from 'react-icons/fa';
+import { useAuth } from '../contexts/AuthContext';
 
 interface AdminProfile {
     name: string;
@@ -10,13 +11,14 @@ interface AdminProfile {
     lastLogin: string;
 }
 
+
+
 const SettingsPage: React.FC = () => {
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
     const [profile, setProfile] = useState<AdminProfile>({
-        name: 'Admin User',
-        email: 'admin@xceltrack.com',
-
-
+        name: user?.displayName || user?.name || 'Admin User',
+        email: user?.email || 'admin@xceltrack.com',
         lastLogin: '2025-12-07 14:23:15',
     });
 
@@ -24,6 +26,16 @@ const SettingsPage: React.FC = () => {
     const [showPasswordForm, setShowPasswordForm] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
+
+    React.useEffect(() => {
+        if (user) {
+            setProfile(prev => ({
+                ...prev,
+                name: user.displayName || user.name || prev.name,
+                email: user.email || prev.email,
+            }));
+        }
+    }, [user]);
 
     const handleProfileUpdate = () => {
         setSuccessMessage('Profile updated successfully!');

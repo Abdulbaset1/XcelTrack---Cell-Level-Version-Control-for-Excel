@@ -22,7 +22,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, user } = useAuth();
 
   if (isAuthenticated) {
-    if (user?.role === 'Admin') {
+    if (user?.role?.toLowerCase() === 'admin') {
       return <Navigate to="/admin" />;
     }
     return <Navigate to="/dashboard" />;

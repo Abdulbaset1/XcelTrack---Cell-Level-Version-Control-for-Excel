@@ -84,7 +84,7 @@ const AdminDashboard: React.FC = () => {
         setSidebarOpen(!sidebarOpen);
     };
 
-    const { logout } = useAuth();
+    const { logout, user } = useAuth();
     const navigate = useNavigate();
 
     const handleSignOut = async () => {
@@ -255,7 +255,15 @@ const AdminDashboard: React.FC = () => {
                                             onClick={() => setActiveTab('profile')}
                                             title="View Admin Profile"
                                         >
-                                            <span>M</span>
+                                            {user?.photoURL ? (
+                                                <img
+                                                    src={user.photoURL}
+                                                    alt="User Avatar"
+                                                    style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                                                />
+                                            ) : (
+                                                <span>{user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'A'}</span>
+                                            )}
                                             <div className="avatar-status"></div>
                                         </button>
                                     </div>
@@ -388,7 +396,7 @@ const AdminDashboard: React.FC = () => {
                     </>
                 )}
             </div>
-        </div>
+        </div >
     );
 };
 
