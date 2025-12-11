@@ -13,25 +13,24 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  const [message, setMessage] = useState('');
+
   const { login, loginWithGoogle, loginWithGithub, resetPassword } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setMessage('');
     setIsLoading(true);
 
     try {
       const user = await login(email, password);
-      console.log('Login successful. User object:', user);
-      console.log('User role check:', user?.role, user?.role?.toLowerCase() === 'admin');
-
+      // ... existing login logic
       if (user) {
         if (user.role?.toLowerCase() === 'admin') {
-          console.log('Redirecting to /admin');
           navigate('/admin');
         } else {
-          console.log('Redirecting to /dashboard');
           navigate('/dashboard');
         }
       }
@@ -53,7 +52,15 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         </div>
       )}
 
+      {message && (
+        <div className="bg-green-500/20 backdrop-blur-sm border border-green-400/30 text-green-200 px-4 py-3 rounded-lg mb-4">
+          {message}
+        </div>
+      )}
+
+      {/* Social Buttons */}
       <div className="flex justify-center space-x-3 mb-6">
+        {/* ... existing social buttons ... */}
         <button
           type="button"
           onClick={async () => {
@@ -143,21 +150,24 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         {isLoading ? 'Signing In...' : 'Sign In'}
       </button>
 
-
-
       <div className="text-center mt-4">
         <button
           type="button"
           onClick={async () => {
+            setError('');
+            setMessage('');
             if (!email) {
-              setError('Please enter your email address to reset password.');
+              setError('Please enter your email address above to reset your password.');
               return;
             }
             try {
+              setIsLoading(true);
               await resetPassword(email);
-              setError('Password reset email sent! Check your inbox.');
+              setMessage('Password reset email sent! Check your inbox.');
             } catch (err) {
               setError('Failed to send reset email. Please try again.');
+            } finally {
+              setIsLoading(false);
             }
           }}
           className="text-blue-300 hover:text-blue-200 text-sm transition-colors bg-transparent border-none cursor-pointer"
@@ -166,16 +176,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
         </button>
       </div>
 
-      {/* DEBUG: Direct Admin Access Button */}
-      <div className="mt-6 pt-4 border-t border-white/10 text-center">
-        <button
-          type="button"
-          onClick={() => navigate('/test-admin')}
-          className="text-xs bg-yellow-500/20 text-yellow-200 border border-yellow-500/30 px-3 py-1.5 rounded hover:bg-yellow-500/30 transition-colors"
-        >
-          🐞 Debug: Load Admin Dashboard (Bypass Auth)
-        </button>
-      </div>
+
     </form>
   );
 };
