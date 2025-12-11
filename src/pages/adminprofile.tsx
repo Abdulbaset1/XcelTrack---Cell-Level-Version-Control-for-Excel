@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { FaCamera, FaUser, FaEnvelope } from 'react-icons/fa';
 // import { MdEdit } from 'react-icons/md'; // Removed as edit option is removed
 
@@ -14,28 +15,31 @@ interface AdminProfileData {
 }
 
 const AdminProfile: React.FC = () => {
-    const [profile, setProfile] = useState<AdminProfileData>({
-        id: 'admin001',
-        username: 'Maleeha ',
-        email: 'maleeha@xceltrack.com',
-        department: 'IT Administration',
-        profileImage: 'A',
-        joinDate: '2024-01-15',
-        lastLogin: '2025-12-07 14:23:15',
-        role: 'System Administrator'
-    });
+    const { user } = useAuth();
+
+    // We can show a loading state if user is strictly null, but generally this page is protected.
+    // However, to be safe:
+    if (!user) return null;
+
+    // Determine initials for avatar
+    const initials = user.displayName
+        ? user.displayName.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()
+        : 'U';
+
+    const profileData: AdminProfileData = {
+        id: user.uid,
+        username: user.displayName || 'Admin User',
+        email: user.email || '',
+        department: 'Administration', // Hardcoded or fetch if available
+        profileImage: initials,
+        joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A',
+        lastLogin: new Date().toLocaleString(), // Approximate 'now' since they are viewing it
+        role: user.role || 'Admin'
+    };
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                // For demo, use first letter of username if no actual image logic
-                // In real app, this would be the base64 string
-                setProfile({ ...profile, profileImage: profile.username.charAt(0).toUpperCase() });
-            };
-            reader.readAsDataURL(file);
-        }
+        // Implement upload logic later if needed
+        alert("Profile picture update not yet connected to storage.");
     };
 
     return (
@@ -53,7 +57,7 @@ const AdminProfile: React.FC = () => {
                 <div className="profile-picture-section glass-panel">
                     <div className="picture-container">
                         <div className="profile-avatar large">
-                            <span>{profile.profileImage}</span>
+                            <span>{profileData.profileImage}</span>
                         </div>
                         <label className="image-upload-label" title="Change Profile Picture">
                             {/* @ts-ignore */}
@@ -67,17 +71,17 @@ const AdminProfile: React.FC = () => {
                         </label>
                     </div>
                     <div className="picture-info">
-                        <h2 className="profile-name">{profile.username}</h2>
-                        <p className="profile-role">{profile.role}</p>
+                        <h2 className="profile-name">{profileData.username}</h2>
+                        <p className="profile-role">{profileData.role}</p>
                         <div className="profile-meta">
                             <span className="meta-item">
-                                <strong>ID:</strong> {profile.id}
+                                <strong>ID:</strong> {profileData.id}
                             </span>
                             <span className="meta-item">
-                                <strong>Joined:</strong> {profile.joinDate}
+                                <strong>Joined:</strong> {profileData.joinDate}
                             </span>
                             <span className="meta-item">
-                                <strong>Last Login:</strong> {profile.lastLogin}
+                                <strong>Last Login:</strong> {profileData.lastLogin}
                             </span>
                         </div>
                     </div>
@@ -95,7 +99,7 @@ const AdminProfile: React.FC = () => {
                                 <FaUser className="label-icon" />
                                 Username
                             </label>
-                            <div className="form-display">{profile.username}</div>
+                            <div className="form-display">{profileData.username}</div>
                         </div>
 
                         {/* Email */}
@@ -105,19 +109,19 @@ const AdminProfile: React.FC = () => {
                                 <FaEnvelope className="label-icon" />
                                 Email Address
                             </label>
-                            <div className="form-display">{profile.email}</div>
+                            <div className="form-display">{profileData.email}</div>
                         </div>
 
                         {/* Department */}
                         <div className="form-group">
                             <label className="form-label">Department</label>
-                            <div className="form-display">{profile.department}</div>
+                            <div className="form-display">{profileData.department}</div>
                         </div>
 
                         {/* Role */}
                         <div className="form-group">
                             <label className="form-label">Role</label>
-                            <div className="form-display read-only">{profile.role}</div>
+                            <div className="form-display read-only">{profileData.role}</div>
                         </div>
 
                         {/* Status */}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import { FaTrash, FaUserShield, FaUser } from 'react-icons/fa6';
 import { FaShieldAlt } from 'react-icons/fa';
 
@@ -12,7 +13,9 @@ interface User {
 }
 
 const UsersPage: React.FC = () => {
+    const { user: currentUser } = useAuth();
     const [users, setUsers] = useState<User[]>([]);
+    const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -36,6 +39,7 @@ const UsersPage: React.FC = () => {
                 lastActive: 'Recently' // Placeholder as backend doesn't send this yet
             }));
             setUsers(mappedUsers);
+            setFilteredUsers(mappedUsers);
             setError('');
         } catch (err) {
             console.error('Error fetching users:', err);
@@ -49,10 +53,20 @@ const UsersPage: React.FC = () => {
         fetchUsers();
     }, []);
 
-    const filteredUsers = users.filter(user => {
-        return user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    });
+    // Filter users based on search and exclude current user
+    useEffect(() => {
+        let result = users;
+        if (currentUser) {
+            result = result.filter((u: User) => u.id !== currentUser.uid);
+        }
+        if (searchTerm) {
+            result = result.filter(user =>
+                user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                user.email.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        }
+        setFilteredUsers(result);
+    }, [searchTerm, users, currentUser]);
 
     const deleteUser = async (uid: string) => {
         if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;

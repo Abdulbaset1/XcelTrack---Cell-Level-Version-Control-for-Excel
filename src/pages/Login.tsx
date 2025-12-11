@@ -23,10 +23,15 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
 
     try {
       const user = await login(email, password);
+      console.log('Login successful. User object:', user);
+      console.log('User role check:', user?.role, user?.role?.toLowerCase() === 'admin');
+
       if (user) {
-        if (user.role === 'Admin') {
+        if (user.role?.toLowerCase() === 'admin') {
+          console.log('Redirecting to /admin');
           navigate('/admin');
         } else {
+          console.log('Redirecting to /dashboard');
           navigate('/dashboard');
         }
       }
@@ -54,7 +59,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
           onClick={async () => {
             try {
               const user = await loginWithGoogle();
-              if (user && user.role === 'Admin') {
+              if (user && user.role?.toLowerCase() === 'admin') {
                 navigate('/admin');
               } else {
                 navigate('/dashboard');
@@ -72,7 +77,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
           onClick={async () => {
             try {
               const user = await loginWithGithub();
-              if (user && user.role === 'Admin') {
+              if (user && user.role?.toLowerCase() === 'admin') {
                 navigate('/admin');
               } else {
                 navigate('/dashboard');
