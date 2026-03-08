@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { FiCheck, FiX, FiAlertCircle } from 'react-icons/fi';
+import { FiCheck, FiAlertCircle } from 'react-icons/fi';
 
 interface ConflictItem {
-    cellReference: string;
+    cellKey: string;       // Unique ID like "sheet-01:0:0"
+    cellReference: string;   // Pretty name for display like "A1"
     yourValue: string;
     yourFormula?: string;
     theirValue: string;
@@ -25,20 +26,41 @@ const ConflictResolutionViewer: React.FC<ConflictResolutionViewerProps> = ({
     const [resolutions, setResolutions] = useState<Record<string, 'yours' | 'theirs' | 'custom'>>({});
     const [customValues, setCustomValues] = useState<Record<string, string>>({});
 
-    const handleSelectResolution = (cellRef: string, choice: 'yours' | 'theirs') => {
-        setResolutions({ ...resolutions, [cellRef]: choice });
+    const safelyRenderValue = (val: any) => {
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object') {
+            return val.v !== undefined ? String(val.v) : JSON.stringify(val);
+        }
+        return String(val);
     };
 
-    const handleCustomValue = (cellRef: string, value: string) => {
-        setCustomValues({ ...customValues, [cellRef]: value });
-        setResolutions({ ...resolutions, [cellRef]: 'custom' });
+    const handleSelectResolution = (cellKey: string, choice: 'yours' | 'theirs') => {
+        setResolutions({ ...resolutions, [cellKey]: choice });
+    };
+
+    const handleCustomValue = (cellKey: string, value: string) => {
+        setCustomValues({ ...customValues, [cellKey]: value });
+        setResolutions({ ...resolutions, [cellKey]: 'custom' });
     };
 
     const handleResolveAll = () => {
-        onResolve?.(resolutions);
+        const resolutionData: Record<string, { choice: 'yours' | 'theirs' | 'custom', value: string }> = {};
+
+        conflicts.forEach(conflict => {
+            const choice = resolutions[conflict.cellKey];
+            let value = '';
+
+            if (choice === 'yours') value = conflict.yourValue;
+            else if (choice === 'theirs') value = conflict.theirValue;
+            else if (choice === 'custom') value = customValues[conflict.cellKey] || '';
+
+            resolutionData[conflict.cellKey] = { choice, value };
+        });
+
+        onResolve?.(resolutionData as any);
     };
 
-    const allResolved = conflicts.every((c) => resolutions[c.cellReference]);
+    const allResolved = conflicts.every((c) => resolutions[c.cellKey]);
 
     return (
         <div className="bg-white rounded-lg border border-gray-200 shadow-lg">
@@ -64,7 +86,7 @@ const ConflictResolutionViewer: React.FC<ConflictResolutionViewerProps> = ({
                             <h3 className="font-mono font-semibold text-lg text-blue-600">
                                 {conflict.cellReference}
                             </h3>
-                            {resolutions[conflict.cellReference] && (
+                            {resolutions[conflict.cellKey] && (
                                 <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded">
                                     ✓ Resolved
                                 </span>
@@ -75,32 +97,32 @@ const ConflictResolutionViewer: React.FC<ConflictResolutionViewerProps> = ({
                         <div className="grid grid-cols-2 gap-4 mb-4">
                             {/* Your Version */}
                             <button
-                                onClick={() => handleSelectResolution(conflict.cellReference, 'yours')}
-                                className={`border-2 rounded-lg p-4 text-left transition-all ${resolutions[conflict.cellReference] === 'yours'
+                                onClick={() => handleSelectResolution(conflict.cellKey, 'yours')}
+                                className={`border-2 rounded-lg p-4 text-left transition-all ${resolutions[conflict.cellKey] === 'yours'
                                     ? 'border-blue-500 bg-blue-50'
                                     : 'border-gray-200 hover:border-blue-300'
                                     }`}
                             >
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-sm font-semibold text-gray-700">Your Version</span>
-                                    {resolutions[conflict.cellReference] === 'yours' && (
+                                    {resolutions[conflict.cellKey] === 'yours' && (
                                         (FiCheck as any)({ className: "text-blue-500", size: 20 })
                                     )}
                                 </div>
                                 <div className="text-sm text-gray-900 font-medium mb-1">
-                                    {conflict.yourValue}
+                                    {safelyRenderValue(conflict.yourValue)}
                                 </div>
                                 {conflict.yourFormula && (
                                     <div className="text-xs text-purple-600 font-mono">
-                                        = {conflict.yourFormula}
+                                        = {safelyRenderValue(conflict.yourFormula)}
                                     </div>
                                 )}
                             </button>
 
                             {/* Their Version */}
                             <button
-                                onClick={() => handleSelectResolution(conflict.cellReference, 'theirs')}
-                                className={`border-2 rounded-lg p-4 text-left transition-all ${resolutions[conflict.cellReference] === 'theirs'
+                                onClick={() => handleSelectResolution(conflict.cellKey, 'theirs')}
+                                className={`border-2 rounded-lg p-4 text-left transition-all ${resolutions[conflict.cellKey] === 'theirs'
                                     ? 'border-green-500 bg-green-50'
                                     : 'border-gray-200 hover:border-green-300'
                                     }`}
@@ -115,16 +137,16 @@ const ConflictResolutionViewer: React.FC<ConflictResolutionViewerProps> = ({
                                             style={{ backgroundColor: conflict.theirColor }}
                                         ></div>
                                     </div>
-                                    {resolutions[conflict.cellReference] === 'theirs' && (
+                                    {resolutions[conflict.cellKey] === 'theirs' && (
                                         (FiCheck as any)({ className: "text-green-500", size: 20 })
                                     )}
                                 </div>
                                 <div className="text-sm text-gray-900 font-medium mb-1">
-                                    {conflict.theirValue}
+                                    {safelyRenderValue(conflict.theirValue)}
                                 </div>
                                 {conflict.theirFormula && (
                                     <div className="text-xs text-purple-600 font-mono">
-                                        = {conflict.theirFormula}
+                                        = {safelyRenderValue(conflict.theirFormula)}
                                     </div>
                                 )}
                             </button>
@@ -137,8 +159,8 @@ const ConflictResolutionViewer: React.FC<ConflictResolutionViewerProps> = ({
                             </label>
                             <input
                                 type="text"
-                                value={customValues[conflict.cellReference] || ''}
-                                onChange={(e) => handleCustomValue(conflict.cellReference, e.target.value)}
+                                value={customValues[conflict.cellKey] || ''}
+                                onChange={(e) => handleCustomValue(conflict.cellKey, e.target.value)}
                                 placeholder="Enter custom value..."
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />

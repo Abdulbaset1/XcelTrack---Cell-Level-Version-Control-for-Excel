@@ -47,7 +47,7 @@ const RollbackModal: React.FC<RollbackModalProps> = ({
     const handleConfirm = async () => {
         setIsConfirming(true);
         try {
-            const result = await rollbackToCommit(workbookId, commitId, userId);
+            await rollbackToCommit(workbookId, commitId, userId);
             showToast('Successfully rolled back to previous version!', 'success');
             onConfirm?.();
         } catch (error) {

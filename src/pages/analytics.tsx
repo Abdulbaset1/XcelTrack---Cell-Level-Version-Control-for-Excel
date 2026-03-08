@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { FaDownload } from 'react-icons/fa';
 
 interface AuditLog {
@@ -20,8 +20,6 @@ interface SystemMetric {
 }
 
 const AnalyticsPage: React.FC = () => {
-    const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d'>('30d');
-    const [reportType, setReportType] = useState<'compliance' | 'auditlogs'>('compliance');
 
     const auditLogs: AuditLog[] = [
         { id: 'al1', timestamp: '2025-12-03 14:23:15', user: 'Maleeha@example.com', action: 'User Created', details: 'New user john_analyst added to system', ipAddress: '192.168.1.100', status: 'success' },

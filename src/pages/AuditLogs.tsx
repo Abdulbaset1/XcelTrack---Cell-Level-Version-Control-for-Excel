@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FaSearch, FaDownload, FaFilter, FaFileExport, FaListAlt } from 'react-icons/fa';
+import { FaSearch, FaDownload, FaFileExport, FaListAlt } from 'react-icons/fa';
 // file: component for FR9.2 and FR9.5
 
 interface AuditLog {

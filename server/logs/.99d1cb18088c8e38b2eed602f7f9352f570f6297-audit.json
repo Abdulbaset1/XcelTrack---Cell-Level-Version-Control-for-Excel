@@ -6,19 +6,34 @@
     "auditLog": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\.99d1cb18088c8e38b2eed602f7f9352f570f6297-audit.json",
     "files": [
         {
-            "date": 1770903415971,
-            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-02-12.log",
-            "hash": "fb5d0d8effc76fdd631faca080e2f3af27f93a7101358a0d7af5f3488ee669b3"
+            "date": 1772036169914,
+            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-02-25.log",
+            "hash": "90a73933723a25fe8d561cfb28fc89cd872c248869a34deafc3c7f0a8f13f1f5"
         },
         {
-            "date": 1770974112610,
-            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-02-13.log",
-            "hash": "dc844131c10900cdab0fec96c99d97ca1667acd2a73ac3269aa317ef4eab1712"
+            "date": 1772178719328,
+            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-02-27.log",
+            "hash": "7e5b7f125596cc71f49fa61d90e62d5342e88ef73810e8fc4e769783d41a76f8"
         },
         {
-            "date": 1771525377815,
-            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-02-19.log",
-            "hash": "558088aea99b1a49b3ff00fd2b75ecaa9449850cde8e2dd6b64e6248a97904ba"
+            "date": 1772269031160,
+            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-02-28.log",
+            "hash": "b36696c857cbb73bc99997bc6d5c50aefa6a5d449028c161b236077cf4f6a7af"
+        },
+        {
+            "date": 1772305656786,
+            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-03-01.log",
+            "hash": "1672baeceec9140da592813036ba3722389257a6998fc42c9f5984adc13221f6"
+        },
+        {
+            "date": 1772688999342,
+            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-03-05.log",
+            "hash": "84d5a405bfb546108fcb12d050c0be562be54d128bff69bdf502bc75c8300317"
+        },
+        {
+            "date": 1772967134793,
+            "name": "C:\\Users\\PMLS\\Documents\\projects\\XcelTrack---Cell-Level-Version-Control-for-Excel\\server\\logs\\error-2026-03-08.log",
+            "hash": "df176df0fd1db62575f8551e9012fbbfec5bb4d703daffb80a71453c1c71037d"
         }
     ],
     "hashType": "sha256"

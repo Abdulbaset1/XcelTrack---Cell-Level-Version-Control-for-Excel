@@ -11,7 +11,7 @@ import WhosEditingSidebar from '../components/WhosEditingSidebar';
 import VersionHistoryTimeline from '../components/VersionHistoryTimeline';
 import RollbackModal from '../components/RollbackModal';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { FiChevronLeft, FiChevronRight, FiMenu, FiSidebar } from 'react-icons/fi';
+import { FiChevronLeft, FiChevronRight, FiSidebar } from 'react-icons/fi';
 import { Commit } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -20,8 +20,6 @@ import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCom
 import HybridSyncBanner from '../components/HybridSyncBanner';
 import ConflictNotificationBanner from '../components/ConflictNotificationBanner';
 import ConflictResolutionViewer from '../components/ConflictResolutionViewer';
-import DiffHighlighter from '../components/DiffHighlighter';
-import SemanticDiffSummary from '../components/SemanticDiffSummary';
 import CommitDetailViewer from '../components/CommitDetailViewer';
 
 const Editor: React.FC = () => {
@@ -30,7 +28,7 @@ const Editor: React.FC = () => {
   const editorRef = React.useRef<ExcelEditorRef>(null);
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { joinWorkbook, leaveWorkbook, sendCursorMove, sendCellEdit, activeUsers, cursors, onCellChange } = useWebSocket();
+  const { joinWorkbook, leaveWorkbook, sendCursorMove, sendCellEdit, activeUsers, cursors, onCellChange, onConflict, onConflictResolved, resolveConflict } = useWebSocket();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [workbookData, setWorkbookData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -50,7 +48,7 @@ const Editor: React.FC = () => {
   const [conflicts, setConflicts] = useState<any[]>([]);
   const [isConflictViewerOpen, setIsConflictViewerOpen] = useState(false);
   const [selectedCommitDetails, setSelectedCommitDetails] = useState<any | null>(null);
-  const [isCommitDetailsLoading, setIsCommitDetailsLoading] = useState(false);
+  const [, setIsCommitDetailsLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -113,6 +111,37 @@ const Editor: React.FC = () => {
     });
   }, [id, onCellChange, showToast]);
 
+  // Listen for real-time conflicts from other users
+  useEffect(() => {
+    if (!id) return;
+    onConflict((data) => {
+      console.warn('Conflict received via WebSocket:', data);
+      setConflicts((prev) => [...prev, data]);
+      setIsConflictViewerOpen(true);
+      showToast('⚠️ A conflict was detected! Please resolve it.', 'warning');
+    });
+  }, [id, onConflict, showToast]);
+
+  // Listen for conflict resolutions from other users
+  useEffect(() => {
+    if (!id) return;
+    onConflictResolved((data) => {
+      console.log('Conflict resolved by collaborator:', data);
+
+      // Update the local Excel sheet with the resolved value
+      if (editorRef.current && data.cellData) {
+        const { row, col, worksheetId } = data.cellData;
+        if (worksheetId === activeWorksheetId) {
+          editorRef.current.updateCell(row, col, data.resolvedValue);
+        }
+      }
+
+      setConflicts((prev) => prev.filter((c: any) => c.conflictId !== data.conflictId));
+      if (conflicts.length <= 1) setIsConflictViewerOpen(false);
+      showToast('Conflict resolved by a collaborator', 'success');
+    });
+  }, [id, onConflictResolved, showToast, conflicts.length, activeWorksheetId]);
+
   const handleCellChange = React.useCallback((cell: any) => {
     console.log('Cell changed:', cell);
 
@@ -173,10 +202,36 @@ const Editor: React.FC = () => {
     }
   };
 
-  const handleResolveConflicts = (resolutions: any) => {
-    console.log('Resolving conflicts:', resolutions);
-    setConflicts([]);
-    setIsConflictViewerOpen(false);
+  const handleResolveConflicts = (resolutionData: any) => {
+    console.log('Resolving conflicts:', resolutionData);
+
+    // Broadcast resolution via WebSocket so other collaborators are notified
+    if (id && user && resolutionData) {
+      // Loop through each resolved cell
+      Object.entries(resolutionData).forEach(([cellRef, data]: [string, any]) => {
+        // Find the original conflict object to get its ID and cell coordinates
+        const conflictObj = conflicts.find(c => c.cell === cellRef);
+        if (!conflictObj) return;
+
+        const { conflictId, cellData } = conflictObj;
+        const { row, col, worksheetId } = cellData;
+
+        // 1. Update the local Excel editor immediately
+        if (editorRef.current && worksheetId === activeWorksheetId) {
+          editorRef.current.updateCell(row, col, data.value);
+        }
+
+        // 2. Clear from local conflict state
+        setConflicts(prev => prev.filter(c => c.conflictId !== conflictId));
+
+        // 3. Inform server+others
+        resolveConflict(conflictId, data.choice, data.value, user.uid, parseInt(id), cellData);
+      });
+    }
+
+    if (conflicts.length === 0) {
+      setIsConflictViewerOpen(false);
+    }
     showToast('Conflicts resolved successfully', 'success');
   };
 
@@ -459,7 +514,7 @@ const Editor: React.FC = () => {
       {/* Main Container for Side-by-Side Layout */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Main Editor Area */}
-        <div className="flex-1 overflow-auto p-6 transition-all duration-300">
+        <div className="flex-1 overflow-hidden p-6 transition-all duration-300">
           <div className="max-w-full mx-auto h-full flex flex-col">
             <div className="bg-white rounded-lg shadow-lg overflow-hidden flex-1 flex flex-col">
               {/* Zoom Controls */}
@@ -470,22 +525,46 @@ const Editor: React.FC = () => {
                 />
               </div>
 
-              {/* Excel Editor */}
-              <div className="p-4 flex-1">
-                <ExcelEditor
-                  ref={editorRef}
-                  workbookData={workbookData}
-                  onCellSelect={handleCellSelect}
-                  onCellChange={handleCellChange}
-                  onSave={(data: any) => {
-                    console.log('Workbook saved:', data);
-                    if (id && user) {
-                      createCommit(parseInt(id), user.uid, 'Manual save')
-                        .then(() => showToast('Changes saved and committed', 'success'))
-                        .catch(() => showToast('Failed to save commit', 'error'));
-                    }
-                  }}
-                />
+              {/* Excel Editor Wrapper */}
+              <div className="p-4 flex-1 relative z-10 min-h-[500px]">
+                {isLoading ? (
+                  <div className="h-full w-full flex items-center justify-center bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex flex-col items-center text-gray-400">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400 mb-4"></div>
+                      <p>Loading spreadsheet engine...</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <ExcelEditor
+                      ref={editorRef}
+                      workbookData={workbookData}
+                      onCellSelect={handleCellSelect}
+                      onCellChange={handleCellChange}
+                      onSave={(data: any) => {
+                        console.log('Workbook saved:', data);
+                        if (id && user) {
+                          createCommit(parseInt(id), user.uid, 'Manual save')
+                            .then(() => showToast('Changes saved and committed', 'success'))
+                            .catch(() => showToast('Failed to save commit', 'error'));
+                        }
+                      }}
+                    />
+
+                    {/* Collaborative Cursors Overlay - Placed exactly over the editor canvas */}
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden z-20 top-4 left-4 right-4 bottom-4">
+                      <CollaborativeCursors
+                        cursors={Array.from(cursors.values()).map((cursor: any) => ({
+                          userId: cursor.socketId,
+                          userName: activeUsers.find((u: any) => u.socketId === cursor.socketId)?.userName || 'Unknown',
+                          color: activeUsers.find((u: any) => u.socketId === cursor.socketId)?.color || '#000',
+                          cellReference: `${String.fromCharCode(65 + cursor.position.col)}${cursor.position.row + 1}`,
+                          position: { x: cursor.position.col * 100, y: cursor.position.row * 25 }
+                        }))}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Worksheet Tabs */}
@@ -497,19 +576,6 @@ const Editor: React.FC = () => {
                 onWorksheetRename={handleWorksheetRename}
                 onWorksheetDelete={handleWorksheetDelete}
                 onWorksheetReorder={handleWorksheetReorder}
-              />
-            </div>
-
-            {/* Collaborative Cursors Overlay */}
-            <div className="relative mt-4">
-              <CollaborativeCursors
-                cursors={Array.from(cursors.values()).map((cursor: any) => ({
-                  userId: cursor.socketId,
-                  userName: activeUsers.find((u: any) => u.socketId === cursor.socketId)?.userName || 'Unknown',
-                  color: activeUsers.find((u: any) => u.socketId === cursor.socketId)?.color || '#000',
-                  cellReference: `${String.fromCharCode(65 + cursor.position.col)}${cursor.position.row + 1}`,
-                  position: { x: cursor.position.col * 100, y: cursor.position.row * 25 }
-                }))}
               />
             </div>
           </div>
@@ -634,7 +700,19 @@ const Editor: React.FC = () => {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-75 p-4">
           <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <ConflictResolutionViewer
-              conflicts={conflicts}
+              conflicts={conflicts.map((c: any) => {
+                const isTriggerer = user?.uid === c.user?.userId;
+                return {
+                  cellKey: c.cell,
+                  cellReference: `${String.fromCharCode(65 + c.cellData.col)}${c.cellData.row + 1}`,
+                  yourValue: isTriggerer ? c.cellData.value : c.conflictingValue,
+                  yourFormula: isTriggerer ? c.cellData.formula : '', // Simplified for now
+                  theirValue: isTriggerer ? c.conflictingValue : c.cellData.value,
+                  theirFormula: isTriggerer ? '' : c.cellData.formula,
+                  theirUser: isTriggerer ? (c.conflictingUser?.userName || 'Collaborator') : (c.user?.userName || 'Collaborator'),
+                  theirColor: isTriggerer ? (c.conflictingUser?.color || '#FF0000') : (c.user?.color || '#FF0000')
+                };
+              })}
               onResolve={handleResolveConflicts}
               onCancel={() => setIsConflictViewerOpen(false)}
             />

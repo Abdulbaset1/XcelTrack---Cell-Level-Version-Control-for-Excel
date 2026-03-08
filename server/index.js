@@ -23,6 +23,7 @@ const {
 } = require('./rateLimiter');
 const FileProcessor = require('./fileProcessor');
 const DiffEngine = require('./diffEngine');
+const { initWebSocket } = require('./websocketServer');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -1300,101 +1301,10 @@ app.get('/api/commits/:id/snapshot', async (req, res) => {
 // WEBSOCKET COLLABORATION
 // ============================================
 
-// Track active users per workbook
-const workbookUsers = new Map(); // workbookId -> Set of { socketId, userId, userName, color }
+// Initialize collaboration WebSocket server (conflict detection, typing indicators, presence)
+initWebSocket(io, pool);
 
-io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id);
 
-    // Join a workbook room
-    socket.on('join-workbook', ({ workbookId, userId, userName }) => {
-        const room = `workbook-${workbookId}`;
-        socket.join(room);
-
-        // Assign a random color for this user's cursor
-        const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-        const color = colors[Math.floor(Math.random() * colors.length)];
-
-        // Store user info
-        if (!workbookUsers.has(workbookId)) {
-            workbookUsers.set(workbookId, new Set());
-        }
-
-        const userInfo = { socketId: socket.id, userId, userName, color };
-        workbookUsers.get(workbookId).add(userInfo);
-
-        // Notify others in the room
-        socket.to(room).emit('user-joined', userInfo);
-
-        // Send current users to the new joiner
-        const currentUsers = Array.from(workbookUsers.get(workbookId) || []);
-        socket.emit('current-users', currentUsers);
-
-        console.log(`User ${userName} (${userId}) joined workbook ${workbookId}`);
-    });
-
-    // Leave a workbook room
-    socket.on('leave-workbook', ({ workbookId, userId }) => {
-        const room = `workbook-${workbookId}`;
-        socket.leave(room);
-
-        // Remove user from tracking
-        if (workbookUsers.has(workbookId)) {
-            const users = workbookUsers.get(workbookId);
-            const userToRemove = Array.from(users).find(u => u.socketId === socket.id);
-            if (userToRemove) {
-                users.delete(userToRemove);
-                socket.to(room).emit('user-left', { socketId: socket.id, userId });
-            }
-        }
-
-        console.log(`User ${userId} left workbook ${workbookId}`);
-    });
-
-    // Broadcast cursor position
-    socket.on('cursor-move', ({ workbookId, position }) => {
-        const room = `workbook-${workbookId}`;
-        socket.to(room).emit('cursor-update', {
-            socketId: socket.id,
-            position, // { row, col, worksheetId }
-        });
-    });
-
-    // Broadcast cell selection
-    socket.on('cell-select', ({ workbookId, selection }) => {
-        const room = `workbook-${workbookId}`;
-        socket.to(room).emit('cell-selection-update', {
-            socketId: socket.id,
-            selection, // { startRow, startCol, endRow, endCol, worksheetId }
-        });
-    });
-
-    // Broadcast cell edit
-    socket.on('cell-edit', ({ workbookId, cellData }) => {
-        const room = `workbook-${workbookId}`;
-        socket.to(room).emit('cell-changed', {
-            socketId: socket.id,
-            cellData, // { row, col, value, formula, worksheetId }
-        });
-    });
-
-    // Handle disconnect
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
-
-        // Remove from all workbooks
-        workbookUsers.forEach((users, workbookId) => {
-            const userToRemove = Array.from(users).find(u => u.socketId === socket.id);
-            if (userToRemove) {
-                users.delete(userToRemove);
-                io.to(`workbook-${workbookId}`).emit('user-left', {
-                    socketId: socket.id,
-                    userId: userToRemove.userId,
-                });
-            }
-        });
-    });
-});
 
 // ============================================
 // START SERVER
