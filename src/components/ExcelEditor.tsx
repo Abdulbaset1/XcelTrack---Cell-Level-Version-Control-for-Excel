@@ -14,6 +14,8 @@ import { UniverUIPlugin } from '@univerjs/ui';
 import { FUniver } from '@univerjs/core/facade';
 import '@univerjs/sheets/facade';
 import '@univerjs/ui/facade';
+import '@univerjs/sheets-ui/facade';
+import '@univerjs/sheets-formula/facade';
 
 // Locales
 import DesignEnUS from '@univerjs/design/lib/locale/en-US';
@@ -98,21 +100,19 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
                 },
             });
 
-            // 2. Core plugins
+            // 2. Core rendering and formula engine
             univer.registerPlugin(UniverRenderEnginePlugin);
             univer.registerPlugin(UniverFormulaEnginePlugin);
 
-            // 3. UI Workbench (Provides core layout and base services)
+            // 3. UI Workbench
             univer.registerPlugin(UniverUIPlugin, {
                 container: containerRef.current!,
                 header: true,
                 toolbar: true,
                 footer: true,
-                // @ts-ignore
-                disableAutoFocus: false,
             });
 
-            // 4. Docs Core & UI (Provides the univer.editor.service for cell editing)
+            // 4. Docs Core & UI (provides cell editor service)
             univer.registerPlugin(UniverDocsPlugin, { hasScroll: false });
             univer.registerPlugin(UniverDocsUIPlugin);
 
@@ -120,7 +120,7 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
             univer.registerPlugin(UniverSheetsPlugin);
             univer.registerPlugin(UniverSheetsFormulaPlugin);
 
-            // 6. Sheets UI (Requires univer.editor.service from DocsUI)
+            // 6. Sheets UI
             univer.registerPlugin(UniverSheetsUIPlugin);
 
             // 9. Initialize facade API
@@ -262,7 +262,64 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
 
             isInitialized.current = true;
 
+            // --- Editing fix: forward dblclick / keystrokes to Univer's edit command ---
+            // Some environments block Univer's internal ShortcutService from catching events.
+            // We explicitly dispatch the StartEditCellOperation command on double-click or
+            // when the user starts typing while a cell is selected.
+            const startEditing = (initialChar?: string) => {
+                try {
+                    fUniver.executeCommand(
+                        'sheet.operation.set-cell-edit-visible',
+                        { visible: true, eventType: 2, keycode: initialChar ? initialChar.charCodeAt(0) : undefined }
+                    );
+                } catch (_) {
+                    // fallback: try alternate command id
+                    try {
+                        fUniver.executeCommand('sheet.command.set-cell-edit-visible', { visible: true });
+                    } catch (__) { /* ignore */ }
+                }
+            };
+
+            // Double-click on the canvas → enter edit mode
+            const onCanvasDblClick = (e: MouseEvent) => {
+                const target = e.target as HTMLElement;
+                if (target.tagName === 'CANVAS' || containerRef.current?.contains(target)) {
+                    startEditing();
+                }
+            };
+            containerRef.current!.addEventListener('dblclick', onCanvasDblClick);
+
+            // Window keydown → if a printable key is pressed while a cell is selected and
+            // the user is NOT already typing in an input/textarea, start editing
+            const onWindowKeyDown = (e: KeyboardEvent) => {
+                const activeEl = document.activeElement;
+                const isTypingInInput =
+                    activeEl && (
+                        activeEl.tagName === 'INPUT' ||
+                        activeEl.tagName === 'TEXTAREA' ||
+                        (activeEl as HTMLElement).isContentEditable
+                    );
+                if (isTypingInInput) return;
+                // Printable characters (single char, no ctrl/meta/alt) or F2
+                const isPrintable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+                const isF2 = e.key === 'F2';
+                if (isPrintable || isF2) {
+                    startEditing(isPrintable ? e.key : undefined);
+                }
+            };
+            window.addEventListener('keydown', onWindowKeyDown);
+            // -----------------------------------------------------------------------
+
+            // Auto-focus the container so pointer events reach Univer immediately
+            setTimeout(() => {
+                if (containerRef.current) {
+                    containerRef.current.focus();
+                }
+            }, 300);
+
             return () => {
+                try { containerRef.current?.removeEventListener('dblclick', onCanvasDblClick); } catch (e) { }
+                try { window.removeEventListener('keydown', onWindowKeyDown); } catch (e) { }
                 try { selectionSub.dispose(); } catch (e) { }
                 try { commandSub.dispose(); } catch (e) { }
                 try { univer.dispose(); } catch (e) { }
@@ -297,15 +354,53 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
         },
         setZoom: (zoom: number) => {
             if (fUniverRef.current) {
-                const wb = fUniverRef.current.getActiveWorkbook();
-                const sh = wb?.getActiveSheet();
-                if (sh && wb) {
-                    fUniverRef.current.executeCommand('sheet.command.set-zoom', {
-                        zoomRatio: zoom / 100,
-                        unitId: wb.getId(),
-                        subUnitId: sh.getSheetId()
-                    });
+                try {
+                    const wb = fUniverRef.current.getActiveWorkbook();
+                    const sh = wb?.getActiveSheet();
+                    if (sh && wb) {
+                        // Correct command ID in UniverJS 0.15.x
+                        fUniverRef.current.executeCommand('sheet.operation.set-zoom-ratio', {
+                            zoomRatio: zoom / 100,
+                            unitId: wb.getId(),
+                            subUnitId: sh.getSheetId()
+                        });
+                    }
+                } catch (e) {
+                    console.warn('[ExcelEditor] setZoom failed:', e);
                 }
+            }
+        },
+        setFormat: (format: any) => {
+            try {
+                const wb = fUniverRef.current?.getActiveWorkbook();
+                const sh = wb?.getActiveSheet();
+                const range = sh?.getSelection()?.getActiveRange();
+                if (!range) return;
+
+                if (format.bold !== undefined) {
+                    const currentStyle = range.getTextStyle();
+                    range.setTextStyle({ bl: format.bold ? 1 : 0 });
+                }
+                if (format.italic !== undefined) {
+                    range.setTextStyle({ it: format.italic ? 1 : 0 });
+                }
+                if (format.underline !== undefined) {
+                    range.setTextStyle({ ul: { s: format.underline ? 1 : 0 } });
+                }
+                if (format.fontSize) {
+                    range.setTextStyle({ fs: parseInt(format.fontSize) });
+                }
+                if (format.fontFamily) {
+                    range.setTextStyle({ ff: format.fontFamily });
+                }
+                if (format.alignment) {
+                    const alignmentMap: Record<string, number> = {
+                        left: 1, center: 2, right: 3,
+                    };
+                    range.setHorizontalAlignment(alignmentMap[format.alignment] || 1);
+                }
+            } catch (e) {
+                console.warn('[ExcelEditor] setFormat failed:', e);
             }
         },
         setValue: (value: string) => {
@@ -343,16 +438,23 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
             <div
                 ref={containerRef}
                 id="univer-container"
+                tabIndex={0}
+                onClick={() => {
+                    if (containerRef.current) {
+                        containerRef.current.focus();
+                    }
+                }}
                 style={{
                     width: '100%',
                     height: '800px',
                     position: 'relative',
-                    overflow: 'visible',
+                    overflow: 'hidden',
                     border: '1px solid #e5e7eb',
                     borderRadius: '0 0 0.75rem 0.75rem',
                     backgroundColor: 'white',
                     boxShadow: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)',
                     outline: 'none',
+                    cursor: 'default',
                 }}
             />
         </div>
