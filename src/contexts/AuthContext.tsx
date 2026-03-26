@@ -7,8 +7,7 @@ import {
   updateProfile,
   signInWithPopup,
   sendPasswordResetEmail,
-  sendEmailVerification,
-  User as FirebaseUser
+  sendEmailVerification
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, googleProvider, githubProvider, db } from '../firebase';

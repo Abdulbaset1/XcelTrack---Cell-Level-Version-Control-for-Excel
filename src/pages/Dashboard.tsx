@@ -1,30 +1,78 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { getWorkbooks, uploadWorkbook, downloadWorkbook } from '../services/api';
+import FileUploadModal from '../components/FileUploadModal';
+import SkeletonLoader from '../components/SkeletonLoader';
 
 const Dashboard: React.FC = () => {
-  // const navigate = useNavigate();
+  const navigate = useNavigate();
   const { user } = useAuth();
+  const { showToast } = useToast();
+  const [files, setFiles] = useState<any[]>([]);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data - in real app, this would come from your backend
-  const recentFiles = [
-    { id: 1, name: 'Q4 Financial Report.xlsx', lastModified: '2 hours ago', size: '2.4 MB' },
-    { id: 2, name: 'Team Budget Planning.xlsx', lastModified: '1 day ago', size: '1.8 MB' },
-    { id: 3, name: 'Marketing Analysis Q1.xlsx', lastModified: '3 days ago', size: '3.1 MB' },
-    { id: 4, name: 'Sales Forecast 2024.xlsx', lastModified: '1 week ago', size: '2.7 MB' },
-  ];
+  const fetchFiles = React.useCallback(async () => {
+    if (user) {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getWorkbooks(user.uid);
+        setFiles(data);
+      } catch (error: any) {
+        console.error("Failed to fetch workbooks", error);
+        setError(error.message || "Failed to load workbooks. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
 
   const quickStats = {
-    totalFiles: 47,
+    totalFiles: files.length,
     activeCollaborations: 5,
     storageUsed: '2.3 GB',
     lastLogin: '2 hours ago'
   };
 
+  const handleFileSelect = async (file: File) => {
+    if (!user) return;
+    try {
+      const response = await uploadWorkbook(file, user.uid);
+      if (response.workbook) {
+        navigate(`/editor/${response.workbook.id}`);
+      }
+    } catch (error: any) {
+      console.error("Upload failed", error);
+      showToast(error.message || "Failed to upload workbook", "error");
+    }
+    setIsUploadModalOpen(false);
+  };
+
+  const handleDownload = async (e: React.MouseEvent, fileId: string, fileName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      showToast(`Preparing download for ${fileName}...`, 'info');
+      await downloadWorkbook(fileId, fileName);
+      showToast('Download started successfully', 'success');
+    } catch (err) {
+      console.error('Download failed:', err);
+      showToast('Failed to download workbook', 'error');
+    }
+  };
+
 
 
   // Styles updated for Light Sapphire Theme with Tilted Background Effect
-  const cardStyle = "bg-white backdrop-blur-lg border border-white/60 rounded-2xl shadow-xl overflow-visible transition-all duration-300 hover:shadow-[0_20px_50px_rgba(59,130,246,0.3)]";
+  const cardStyle = "bg-[var(--bg-card)] backdrop-blur-lg border border-[var(--border-color)] rounded-2xl shadow-xl overflow-visible transition-all duration-300 hover:shadow-[0_20px_50px_var(--shadow-color)]";
 
   return (
     <div className="relative min-h-[calc(100vh-6rem)] rounded-3xl overflow-hidden">
@@ -39,8 +87,8 @@ const Dashboard: React.FC = () => {
           <div className={`${cardStyle} p-8 mb-8`}>
             <div className="flex justify-between items-start">
               <div>
-                <h1 className="text-4xl font-bold mb-2 text-[#051747]">Welcome back, {user?.name || 'User'}! 👋</h1>
-                <p className="text-[#535F80] text-lg">
+                <h1 className="text-4xl font-bold mb-2 text-[var(--text-primary)]">Welcome back, {user?.name || 'User'}! 👋</h1>
+                <p className="text-[var(--text-secondary)] text-lg">
                   Ready to continue working on your spreadsheets? Here's what's happening today.
                 </p>
               </div>
@@ -61,8 +109,8 @@ const Dashboard: React.FC = () => {
                 <div className={`${cardStyle} p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-[#535F80] text-sm font-medium">Total Files</p>
-                      <p className="text-3xl font-bold text-[#051747]">{quickStats.totalFiles}</p>
+                      <p className="text-[var(--text-secondary)] text-sm font-medium">Total Files</p>
+                      <p className="text-3xl font-bold text-[var(--text-primary)]">{quickStats.totalFiles}</p>
                     </div>
                     <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center border border-blue-200">
                       <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,31 +196,98 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 <div className="space-y-4">
-                  {recentFiles.map((file) => (
-                    <div key={file.id} className="hover-card flex items-center justify-between p-4 border-2 border-gray-300 rounded-xl transition-all group">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors border border-blue-200">
-                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
+                  {loading ? (
+                    // Skeleton Loaders
+                    [1, 2, 3].map((n) => (
+                      <div key={n} className="flex items-center justify-between p-4 border-2 border-gray-100 rounded-xl bg-white">
+                        <div className="flex items-center space-x-4 flex-1">
+                          <SkeletonLoader width="40px" height="40px" borderRadius="8px" />
+                          <div className="space-y-2 flex-1">
+                            <SkeletonLoader width="60%" height="16px" />
+                            <SkeletonLoader width="30%" height="12px" />
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-semibold text-[#051747] group-hover:text-sapphire-700 transition-colors">
-                            {file.name}
-                          </p>
-                          <p className="text-sm text-[#535F80]">Modified {file.lastModified}</p>
-                        </div>
+                        <SkeletonLoader width="50px" height="16px" className="ml-4" />
                       </div>
-                      <div className="flex items-center space-x-4">
-                        <span className="text-sm text-[#535F80]">{file.size}</span>
-                        <button className="text-[#535F80] hover:text-[#051747] transition-colors">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                          </svg>
+                    ))
+                  ) : error ? (
+                    <div className="text-center py-8 bg-red-50 rounded-xl border border-red-100">
+                      <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <p className="text-red-800 font-medium mb-4">{error}</p>
+                      <button
+                        onClick={fetchFiles}
+                        className="px-4 py-2 bg-white text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors font-medium text-sm shadow-sm"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  ) : files.length > 0 ? (
+                    files.map((file) => (
+                      <Link key={file.id} to={`/editor/${file.id}`} className="hover-card flex items-center justify-between p-4 border-2 border-gray-100 rounded-xl transition-all group cursor-pointer block hover:border-blue-200 hover:bg-blue-50/30">
+                        <div className="flex items-center space-x-4">
+                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors border border-blue-200">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V6a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="font-semibold text-[#051747] group-hover:text-sapphire-700 transition-colors">
+                              {file.name}
+                            </p>
+                            <p className="text-sm text-[#535F80]">Modified {new Date(file.updated_at).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                          <span className="text-sm text-[#535F80]">{file.size || 'N/A'}</span>
+                          <button
+                            onClick={(e) => handleDownload(e, file.id, file.name)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Download as Excel"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                          </button>
+                          <button className="text-[#535F80] hover:text-[#051747] transition-colors">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+                            </svg>
+                          </button>
+                        </div>
+                      </Link>
+                    ))
+                  ) : (
+                    // Empty State
+                    <div className="text-center py-12 px-4">
+                      <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-bold text-[#051747] mb-1">No spreadsheets yet</h3>
+                      <p className="text-[#535F80] text-sm mb-6 max-w-xs mx-auto">
+                        Quickly get started by creating a new spreadsheet or uploading an existing file.
+                      </p>
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <button
+                          onClick={() => navigate('/editor')}
+                          className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all text-sm"
+                        >
+                          New Spreadsheet
+                        </button>
+                        <button
+                          onClick={() => setIsUploadModalOpen(true)}
+                          className="w-full sm:w-auto px-4 py-2 bg-white border border-gray-300 text-[#051747] rounded-lg font-semibold hover:bg-gray-50 transition-all text-sm"
+                        >
+                          Upload File
                         </button>
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>
@@ -188,26 +303,17 @@ const Dashboard: React.FC = () => {
               <div className={`${cardStyle} p-6`}>
                 <h3 className="text-lg font-semibold text-[#051747] mb-4">Quick Actions</h3>
                 <div className="space-y-3">
-                  <button className="btn-watch-demo w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg">
+                  <button
+                    onClick={() => navigate('/editor')}
+                    className="btn-watch-demo w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg"
+                  >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
                     <span>New Spreadsheet</span>
                   </button>
-                  <input
-                    type="file"
-                    id="file-upload"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        console.log('File selected:', file.name);
-                        // Handle file upload logic here
-                      }
-                    }}
-                  />
                   <button
-                    onClick={() => document.getElementById('file-upload')?.click()}
+                    onClick={() => setIsUploadModalOpen(true)}
                     className="btn-watch-demo w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,6 +361,11 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+      <FileUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onFileSelect={handleFileSelect}
+      />
     </div>
   );
 };

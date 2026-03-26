@@ -49,11 +49,11 @@ const Landing: React.FC = () => {
 
       {/* CTA Section */}
       <section className="pt-20 bg-transparent relative z-20">
-        <div className="bg-white pt-20 pb-20 px-10 w-full text-center shadow-2xl">
-          <h2 className="text-4xl font-bold mb-6 text-[#051747] max-w-2xl mx-auto">
+        <div className="bg-white pt-20 pb-20 px-6 md:px-10 w-full text-center shadow-2xl">
+          <h2 className="text-3xl md:text-4xl font-bold mb-6 text-[#051747] max-w-2xl mx-auto">
             Ready to transform your spreadsheet workflow?
           </h2>
-          <p className="text-xl text-[#535F89] mb-8 max-w-2xl mx-auto">
+          <p className="text-lg md:text-xl text-[#535F89] mb-8 max-w-2xl mx-auto">
             Join thousands of teams already using XcelTrack for better collaboration and version control.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

@@ -41,12 +41,12 @@ const Profile: React.FC = () => {
         <div className="w-full max-w-7xl mx-auto">
             <div className="relative z-0">
                 {/* Glassmorphism Card */}
-                <div className="bg-white/90 backdrop-blur-lg border border-white/60 rounded-2xl shadow-xl p-8 hover:shadow-[0_20px_50px_rgba(30,64,175,0.4)] transition-all duration-300">
+                <div className="bg-[var(--bg-card)] backdrop-blur-lg border border-[var(--border-color)] rounded-2xl shadow-xl p-8 hover:shadow-[0_20px_50px_var(--shadow-color)] transition-all duration-300">
                     {/* Header Navigation */}
                     <div className="flex items-center justify-between mb-8">
                         <Link
                             to="/dashboard"
-                            className="inline-flex items-center space-x-2 text-[#535F80] hover:text-[#051747] transition-all duration-300 font-medium hover:scale-105 hover:shadow-sm px-3 py-2 rounded-lg -ml-3"
+                            className="inline-flex items-center space-x-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all duration-300 font-medium hover:scale-105 hover:shadow-sm px-3 py-2 rounded-lg -ml-3"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />

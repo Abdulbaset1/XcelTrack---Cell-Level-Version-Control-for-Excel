@@ -1,0 +1,156 @@
+/* Add custom animations to Tailwind */
+@keyframes slide-in-right {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slide-up {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Responsive utilities */
+@layer utilities {
+
+    /* Mobile-first responsive text */
+    .text-responsive-xs {
+        @apply text-xs sm:text-sm;
+    }
+
+    .text-responsive-sm {
+        @apply text-sm sm:text-base;
+    }
+
+    .text-responsive-base {
+        @apply text-base sm:text-lg;
+    }
+
+    .text-responsive-lg {
+        @apply text-lg sm:text-xl;
+    }
+
+    .text-responsive-xl {
+        @apply text-xl sm:text-2xl;
+    }
+
+    /* Responsive padding */
+    .p-responsive {
+        @apply p-4 sm:p-6 lg:p-8;
+    }
+
+    .px-responsive {
+        @apply px-4 sm:px-6 lg:px-8;
+    }
+
+    .py-responsive {
+        @apply py-4 sm:py-6 lg:py-8;
+    }
+
+    /* Responsive spacing */
+    .space-responsive {
+        @apply space-y-4 sm:space-y-6 lg:space-y-8;
+    }
+
+    /* Responsive grid */
+    .grid-responsive {
+        @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4;
+    }
+
+    /* Hide on mobile */
+    .hide-mobile {
+        @apply hidden sm:block;
+    }
+
+    /* Show only on mobile */
+    .show-mobile {
+        @apply block sm:hidden;
+    }
+
+    /* Responsive container */
+    .container-responsive {
+        @apply max-w-full sm:max-w-screen-sm md:max-w-screen-md lg:max-w-screen-lg xl:max-w-screen-xl mx-auto;
+    }
+}
+
+/* Animation classes */
+.animate-slide-in-right {
+    animation: slide-in-right 0.3s ease-out;
+}
+
+.animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+}
+
+.animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+}
+
+/* Accessibility improvements */
+.focus-visible:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+}
+
+/* Skip to main content link for screen readers */
+.skip-to-main {
+    @apply absolute left-0 top-0 bg-blue-600 text-white px-4 py-2 transform -translate-y-full focus:translate-y-0 transition-transform z-50;
+}
+
+/* Screen reader only */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* Performance optimizations */
+.will-change-transform {
+    will-change: transform;
+}
+
+.will-change-opacity {
+    will-change: opacity;
+}
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

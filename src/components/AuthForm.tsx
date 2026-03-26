@@ -20,7 +20,7 @@ const AuthForm: React.FC = () => {
     <div
       className="min-h-screen flex items-center justify-center p-4 relative"
       style={{
-        backgroundImage: `url(/assets/images/sidebarLogin.jpeg)`,
+        backgroundImage: `url(/assets/images/auth_bg_new.jpg)`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundRepeat: 'no-repeat',
@@ -85,7 +85,7 @@ const AuthForm: React.FC = () => {
               ${isRightPanelActive ? 'translate-x-1/2' : 'translate-x-0'}
             `}
             style={{
-              backgroundImage: `url(/assets/images/sidebarLogin.jpeg)`,
+              backgroundImage: `url(/assets/images/auth_bg_new.jpg)`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
               backgroundRepeat: 'no-repeat'

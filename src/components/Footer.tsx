@@ -4,31 +4,16 @@ import { Link } from 'react-router-dom';
 
 const Footer: React.FC = () => {
     return (
-        <footer className="bg-[#051747] text-white py-12 relative z-10" style={{ backgroundImage: "url('/assets/footer-bg.png')", backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
+        <footer className="bg-[#051747] text-white py-12 relative z-10" style={{ backgroundImage: "url('/assets/footer-bg.png')", backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
             <div className="absolute inset-0 bg-[#051747]/20 z-0"></div>
             <div className="max-w-7xl mx-auto px-6 relative z-10">
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
                     {/* Product */}
                     <div>
                         <h4 className="font-bold mb-4 text-white">Product</h4>
                         <ul className="space-y-2">
                             <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Features</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Security</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Enterprise</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Customer Stories</Link></li>
                             <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Pricing</Link></li>
-                        </ul>
-                    </div>
-
-                    {/* Company */}
-                    <div>
-                        <h4 className="font-bold mb-4 text-white">Company</h4>
-                        <ul className="space-y-2">
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">About Us</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Careers</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Blog</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Contact</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Partners</Link></li>
                         </ul>
                     </div>
 
@@ -37,10 +22,16 @@ const Footer: React.FC = () => {
                         <h4 className="font-bold mb-4 text-white">Resources</h4>
                         <ul className="space-y-2">
                             <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Documentation</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Community</Link></li>
                             <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Help Center</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">API Reference</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Status</Link></li>
+                        </ul>
+                    </div>
+
+                    {/* Company */}
+                    <div>
+                        <h4 className="font-bold mb-4 text-white">Company</h4>
+                        <ul className="space-y-2">
+                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">About Us</Link></li>
+                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Contact</Link></li>
                         </ul>
                     </div>
 
@@ -50,9 +41,6 @@ const Footer: React.FC = () => {
                         <ul className="space-y-2">
                             <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Privacy Policy</Link></li>
                             <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Terms of Service</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Cookie Policy</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Security</Link></li>
-                            <li><Link to="#" className="text-blue-200 hover:text-white transition-colors">Compliance</Link></li>
                         </ul>
                     </div>
 

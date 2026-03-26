@@ -14,11 +14,16 @@ const OTPModal: React.FC<OTPModalProps> = ({ isOpen, email, onVerify, onResend, 
     const [loading, setLoading] = useState(false);
     const [resendCooldown, setResendCooldown] = useState(0);
     const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes in seconds
+    const [timerResetToggle, setTimerResetToggle] = useState(false);
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
     // Countdown timer for OTP expiration
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen) {
+            setTimeRemaining(600); // Reset timer when modal closed
+            setError('');
+            return;
+        }
 
         const timer = setInterval(() => {
             setTimeRemaining((prev) => {
@@ -32,7 +37,7 @@ const OTPModal: React.FC<OTPModalProps> = ({ isOpen, email, onVerify, onResend, 
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [isOpen]);
+    }, [isOpen, timerResetToggle]);
 
     // Resend cooldown timer
     useEffect(() => {
@@ -109,6 +114,7 @@ const OTPModal: React.FC<OTPModalProps> = ({ isOpen, email, onVerify, onResend, 
             await onResend();
             setResendCooldown(60); // 60 second cooldown
             setTimeRemaining(600); // Reset to 10 minutes
+            setTimerResetToggle(prev => !prev); // Trigger timer restart
             setOtp(['', '', '', '', '', '']);
             inputRefs.current[0]?.focus();
         } catch (err: any) {

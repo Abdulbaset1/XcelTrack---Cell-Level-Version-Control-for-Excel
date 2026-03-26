@@ -1,57 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-
-interface SettingsState {
-  // Version Control
-  autoSaveInterval: string;
-  diffHighlightColor: string;
-  versionHistoryLimit: number;
-  // Notifications
-  emailAlerts: boolean;
-  collaborationInvites: boolean;
-  weeklyDigest: boolean;
-  // Security
-  twoFactorAuth: boolean;
-  publicProfile: boolean;
-}
+import { useSettings } from '../contexts/SettingsContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { useToast } from '../contexts/ToastContext';
 
 const Settings: React.FC = () => {
-  // Default settings
-  const defaultSettings: SettingsState = {
-    autoSaveInterval: '10',
-    diffHighlightColor: '#3B82F6', // Blue-500
-    versionHistoryLimit: 50,
-    emailAlerts: true,
-    collaborationInvites: true,
-    weeklyDigest: false,
-    twoFactorAuth: false,
-    publicProfile: true,
-  };
-
-  const [settings, setSettings] = useState<SettingsState>(defaultSettings);
+  const { settings, updateSettings } = useSettings();
+  const { toggleTheme, isDark } = useTheme();
+  const { showToast } = useToast();
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Load settings from localStorage on mount
-  useEffect(() => {
-    const savedSettings = localStorage.getItem('xceltrack_settings');
-    if (savedSettings) {
-      try {
-        setSettings(JSON.parse(savedSettings));
-      } catch (e) {
-        console.error('Failed to parse settings', e);
-      }
-    }
-  }, []);
-
-  const handleChange = (key: keyof SettingsState, value: any) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
+  const handleChange = (key: any, value: any) => {
+    updateSettings({ [key]: value });
   };
 
   const handleSave = () => {
-    localStorage.setItem('xceltrack_settings', JSON.stringify(settings));
     setShowSuccess(true);
+    showToast("Settings saved successfully", "success");
     setTimeout(() => setShowSuccess(false), 3000);
   };
+
 
   return (
     <div className="w-full max-w-7xl mx-auto">
@@ -88,6 +56,66 @@ const Settings: React.FC = () => {
           </div>
 
           <div className="space-y-10">
+            {/* Appearance Settings */}
+            <section>
+              <h2 className="text-xl font-bold text-[#051747] mb-6 flex items-center border-b-2 border-gray-300 pb-3">
+                <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+                </svg>
+                Appearance
+              </h2>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-[#051747]">Dark Mode</p>
+                    <p className="text-sm text-[#535F80]">Switch between light and dark themes</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={isDark}
+                      onChange={toggleTheme}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            {/* Version Control Settings */}
+            <section>
+              <h2 className="text-xl font-bold text-[#051747] mb-6 flex items-center border-b-2 border-gray-300 pb-3">
+                <svg className="w-6 h-6 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Version Control
+              </h2>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-semibold text-[#535F80] mb-2">Auto-save Interval (minutes)</label>
+                  <input
+                    type="number"
+                    value={settings.autoSaveInterval}
+                    onChange={(e) => handleChange('autoSaveInterval', e.target.value)}
+                    className="w-full bg-blue-50 border-2 border-blue-300 rounded-lg px-4 py-2 text-[#051747] focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#535F80] mb-2">Difference Highlight Color</label>
+                  <div className="flex items-center space-x-4">
+                    <input
+                      type="color"
+                      value={settings.diffHighlightColor}
+                      onChange={(e) => handleChange('diffHighlightColor', e.target.value)}
+                      className="w-12 h-12 rounded-lg cursor-pointer"
+                    />
+                    <span className="text-sm font-mono text-[#051747]">{settings.diffHighlightColor}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             {/* Notifications Settings */}
             <section>
               <h2 className="text-xl font-bold text-[#051747] mb-6 flex items-center border-b-2 border-gray-300 pb-3">
@@ -100,7 +128,7 @@ const Settings: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-[#051747]">Email Alerts</p>
-                    <p className="text-sm text-[#535F80]">Receive emails when files are modified by collaborators</p>
+                    <p className="text-sm text-[#535F80]">Receive emails when files are modified</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
@@ -115,21 +143,19 @@ const Settings: React.FC = () => {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-[#051747]">Collaboration Invites</p>
-                    <p className="text-sm text-[#535F80]">Get notified when someone invites you to a project</p>
+                    <p className="font-medium text-[#051747]">Weekly Digest</p>
+                    <p className="text-sm text-[#535F80]">Get a summary of your activity every week</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       className="sr-only peer"
-                      checked={settings.collaborationInvites}
-                      onChange={(e) => handleChange('collaborationInvites', e.target.checked)}
+                      checked={settings.weeklyDigest}
+                      onChange={(e) => handleChange('weeklyDigest', e.target.checked)}
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
                 </div>
-
-
               </div>
             </section>
 
@@ -142,11 +168,25 @@ const Settings: React.FC = () => {
                 Security & Privacy
               </h2>
               <div className="space-y-4">
-
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-[#051747]">Two-Factor Authentication</p>
+                    <p className="text-sm text-[#535F80]">Add an extra layer of security to your account</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={settings.twoFactorAuth}
+                      onChange={(e) => handleChange('twoFactorAuth', e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-[#051747]">Public Profile</p>
-                    <p className="text-sm text-[#535F80]">Allow others to view your profile and public stats</p>
+                    <p className="text-sm text-[#535F80]">Allow others to view your profile</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input

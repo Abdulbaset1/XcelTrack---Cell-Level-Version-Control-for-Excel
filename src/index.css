@@ -2,6 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-sidebar: #051747;
+    --bg-navbar: rgba(255, 255, 255, 0.7);
+    --bg-card: #ffffff;
+    --text-primary: #051747;
+    --text-secondary: #535f80;
+    --text-on-dark: #ffffff;
+    --border-color: #e2e8f0;
+    --accent-primary: #3b82f6;
+    --accent-secondary: #8b5cf6;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-sidebar: #020617;
+    --bg-navbar: rgba(15, 23, 42, 0.7);
+    --bg-card: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-on-dark: #f8fafc;
+    --border-color: #334155;
+    --accent-primary: #60a5fa;
+    --accent-secondary: #a78bfa;
+    --shadow-color: rgba(0, 0, 0, 0.4);
+}
+
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.3s, color 0.3s;
+}
+
 /* Override browser autofill style to match transparent inputs */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
@@ -129,8 +165,8 @@ input:-webkit-autofill:active {
     /* Hidden initially */
     height: 0;
     /* Hidden initially */
-    background-color: lightblue;
-    /* Matches user's code snippet */
+    background-color: rgba(173, 216, 230, 0.4);
+    /* Subtle light blue */
     transition: all 0.5s;
     z-index: 0;
     /* Behind content */
@@ -188,8 +224,8 @@ input:-webkit-autofill:active {
     content: "";
     width: 0;
     height: 0;
-    background-color: white;
-    /* White on hover */
+    background-color: rgba(255, 255, 255, 0.5);
+    /* Subtle white */
     transition: all 0.5s;
     z-index: 0;
 }
@@ -272,8 +308,57 @@ input:-webkit-autofill:active {
         transform: translateX(400px);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
+    }
+}
+
+/* UX Utilities */
+.glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+[data-theme='dark'] .glass-panel {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.animate-in {
+    animation: animateIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes animateIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.shimmer {
+    background: linear-gradient(90deg,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.2) 50%,
+            rgba(255, 255, 255, 0) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    from {
+        background-position: 200% 0;
+    }
+
+    to {
+        background-position: -200% 0;
     }
 }

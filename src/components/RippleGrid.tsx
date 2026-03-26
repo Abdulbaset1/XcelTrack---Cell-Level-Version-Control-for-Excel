@@ -14,7 +14,8 @@ const RippleGrid = ({
     opacity = 0.15,
     gridRotation = 0,
     mouseInteraction = true,
-    mouseInteractionRadius = 3.5
+    mouseInteractionRadius = 3.5,
+    isStatic = false
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const mousePositionRef = useRef({ x: 0.5, y: 0.5 });
@@ -217,7 +218,7 @@ void main() {
         const render = (t: number) => {
             if (!uniformsRef.current) return;
 
-            uniforms.iTime.value = t * 0.001;
+            uniforms.iTime.value = isStatic ? 0 : t * 0.001;
 
             const lerpFactor = 0.1;
             mousePositionRef.current.x += (targetMouseRef.current.x - mousePositionRef.current.x) * lerpFactor;
@@ -269,7 +270,8 @@ void main() {
         opacity,
         gridRotation,
         mouseInteraction,
-        mouseInteractionRadius
+        mouseInteractionRadius,
+        isStatic
     ]);
 
     // Props update effect
@@ -307,7 +309,8 @@ void main() {
         opacity,
         gridRotation,
         mouseInteraction,
-        mouseInteractionRadius
+        mouseInteractionRadius,
+        isStatic
     ]);
 
     return <div ref={containerRef} className="ripple-grid-container" />;

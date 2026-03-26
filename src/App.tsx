@@ -2,6 +2,10 @@ import React from 'react';
 import './index.css';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
+import { WebSocketProvider } from './contexts/WebSocketContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 import Landing from './pages/Landing';
 import AuthForm from './components/AuthForm';
 import Dashboard from './pages/Dashboard';
@@ -10,6 +14,9 @@ import Settings from './pages/Settings';
 import Layout from './components/Layout';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminRoute from './components/AdminRoute';
+import Editor from './pages/Editor';
+import History from './pages/History';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -73,6 +80,27 @@ function AppRoutes() {
           </Layout>
         </ProtectedRoute>
       } />
+      <Route path="/history" element={
+        <ProtectedRoute>
+          <Layout>
+            <History />
+          </Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/editor" element={
+        <ProtectedRoute>
+          <Layout>
+            <Editor />
+          </Layout>
+        </ProtectedRoute>
+      } />
+      <Route path="/editor/:id" element={
+        <ProtectedRoute>
+          <Layout>
+            <Editor />
+          </Layout>
+        </ProtectedRoute>
+      } />
 
       {/* Admin Routes */}
       <Route path="/admin" element={
@@ -92,13 +120,23 @@ function AppRoutes() {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <div className="App">
-          <AppRoutes />
-        </div>
-      </Router>
-    </AuthProvider>
+    <ThemeProvider>
+      <SettingsProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <WebSocketProvider>
+              <Router>
+                <div className="App">
+                  <ErrorBoundary>
+                    <AppRoutes />
+                  </ErrorBoundary>
+                </div>
+              </Router>
+            </WebSocketProvider>
+          </ToastProvider>
+        </AuthProvider>
+      </SettingsProvider>
+    </ThemeProvider>
   );
 }
 

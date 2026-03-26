@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { FaBell, FaCheckCircle, FaTimesCircle, FaInfoCircle } from 'react-icons/fa';
 
 interface Commit {
     id: string;
@@ -7,14 +6,6 @@ interface Commit {
     message: string;
     timestamp: string;
     type: 'edit' | 'merge' | 'upload' | 'conflict';
-}
-
-interface Notification {
-    id: string;
-    title: string;
-    message: string;
-    timestamp: string;
-    type: 'success' | 'error' | 'info';
 }
 
 const CommitPage: React.FC = () => {
@@ -26,16 +17,6 @@ const CommitPage: React.FC = () => {
         { id: 'c5', user: 'Aly', message: 'Updated system configuration files', timestamp: '2025-12-07 10:15:30', type: 'edit' },
         { id: 'c6', user: 'Zobia', message: 'Merged analytics dashboard updates', timestamp: '2025-12-06 16:42:12', type: 'merge' },
     ]);
-
-    const getTypeColor = (type: string) => {
-        switch (type) {
-            case 'edit': return '#3b82f6';
-            case 'merge': return '#10b981';
-            case 'upload': return '#f59e0b';
-            case 'conflict': return '#ef4444';
-            default: return '#6b7280';
-        }
-    };
 
     return (
         <div className="commit-page" style={{ padding: '0' }}>

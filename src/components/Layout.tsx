@@ -14,7 +14,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-sapphire-50">
+    <div className="min-h-screen bg-[var(--bg-primary)]">
       <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
       <div className={`transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-0'}`}>
         <Navbar toggleSidebar={toggleSidebar} isSidebarOpen={isSidebarOpen} />

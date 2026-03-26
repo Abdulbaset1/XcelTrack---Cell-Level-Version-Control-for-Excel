@@ -26,6 +26,7 @@ const SettingsPage: React.FC = () => {
     const [showPasswordForm, setShowPasswordForm] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
+    const [fieldErrors, setFieldErrors] = useState({ current: '', new: '', confirm: '' });
 
     React.useEffect(() => {
         if (user) {
@@ -41,6 +42,35 @@ const SettingsPage: React.FC = () => {
         setSuccessMessage('Profile updated successfully!');
         setTimeout(() => setSuccessMessage(''), 3000);
     };
+
+    // Real-time validation for password fields
+    const [focusedField, setFocusedField] = useState('');
+    React.useEffect(() => {
+        let errors = { current: '', new: '', confirm: '' };
+
+        if (focusedField === 'new' && !passwordData.currentPassword.trim()) {
+            errors.new = 'Please enter your current password first.';
+        }
+
+        if (focusedField === 'confirm') {
+            if (!passwordData.currentPassword.trim()) {
+                errors.confirm = 'Please enter your current password first.';
+            } else if (passwordData.newPassword.length < 8) {
+                errors.confirm = 'New password must be at least 8 characters first.';
+            }
+        }
+
+        // Global validation errors (shown after typing)
+        if (passwordData.newPassword && passwordData.newPassword.length < 8 && focusedField === 'new') {
+            errors.new = 'New password must be at least 8 characters.';
+        }
+
+        if (passwordData.newPassword && passwordData.confirmPassword && passwordData.newPassword !== passwordData.confirmPassword) {
+            errors.confirm = 'Passwords do not match.';
+        }
+
+        setFieldErrors(errors);
+    }, [passwordData, focusedField]);
 
     const handlePasswordChange = () => {
         setErrorMessage('');
@@ -234,6 +264,7 @@ const SettingsPage: React.FC = () => {
                                                 className="glass-input"
                                                 style={{ width: '100%' }}
                                             />
+                                            {fieldErrors.current && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>{fieldErrors.current}</div>}
                                         </div>
                                         <div>
                                             <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>New Password</label>
@@ -241,9 +272,17 @@ const SettingsPage: React.FC = () => {
                                                 type="password"
                                                 value={passwordData.newPassword}
                                                 onChange={e => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                                                onFocus={() => setFocusedField('new')}
+                                                onBlur={() => setFocusedField('')}
+                                                readOnly={!passwordData.currentPassword.trim()}
                                                 className="glass-input"
-                                                style={{ width: '100%' }}
+                                                style={{
+                                                    width: '100%',
+                                                    opacity: !passwordData.currentPassword.trim() ? 0.7 : 1,
+                                                    cursor: !passwordData.currentPassword.trim() ? 'not-allowed' : 'text'
+                                                }}
                                             />
+                                            {fieldErrors.new && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>{fieldErrors.new}</div>}
                                         </div>
                                         <div>
                                             <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Confirm New Password</label>
@@ -251,9 +290,17 @@ const SettingsPage: React.FC = () => {
                                                 type="password"
                                                 value={passwordData.confirmPassword}
                                                 onChange={e => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                                                onFocus={() => setFocusedField('confirm')}
+                                                onBlur={() => setFocusedField('')}
+                                                readOnly={!passwordData.currentPassword.trim() || passwordData.newPassword.length < 8}
                                                 className="glass-input"
-                                                style={{ width: '100%' }}
+                                                style={{
+                                                    width: '100%',
+                                                    opacity: (!passwordData.currentPassword.trim() || passwordData.newPassword.length < 8) ? 0.7 : 1,
+                                                    cursor: (!passwordData.currentPassword.trim() || passwordData.newPassword.length < 8) ? 'not-allowed' : 'text'
+                                                }}
                                             />
+                                            {fieldErrors.confirm && <div style={{ color: '#ef4444', fontSize: '0.85rem', marginTop: '0.25rem' }}>{fieldErrors.confirm}</div>}
                                         </div>
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                                             <button
