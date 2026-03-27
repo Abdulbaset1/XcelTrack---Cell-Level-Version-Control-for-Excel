@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import '../components/admin-dashboard.css';
@@ -7,77 +7,46 @@ import UsersPage from './users';
 import SettingsPage from './adminsetting';
 import AdminProfile from './adminprofile';
 import AuditLogsPage from './AuditLogs';
+import AnalyticsPage from './analytics';
 import { FaUsers, FaFile } from 'react-icons/fa6';
-import { FaGitAlt, FaCog, FaSignOutAlt, FaListAlt } from 'react-icons/fa';
+import { FaGitAlt, FaCog, FaSignOutAlt, FaListAlt, FaDatabase, FaSync, FaChartBar } from 'react-icons/fa';
 import { MdDashboard, MdSettings } from 'react-icons/md';
-
-// Type definitions
-interface Commit {
-    id: string;
-    user: string;
-    message: string;
-    timestamp: Date;
-    type: 'edit' | 'merge' | 'upload' | 'conflict';
-}
-
-
-
-interface SystemStatus {
-    activeUsers: number;
-    totalCommits: number;
-    pendingMerges: number;
-    systemHealth: 'excellent' | 'good' | 'warning' | 'error';
-}
+import { getAdminStats, getRecentActivity, AdminStats, RecentActivityCommit } from '../services/api';
 
 const AdminDashboard: React.FC = () => {
-    /* Notifications removed as per FR alignment */
-    const [activeTab, setActiveTab] = useState<'overview' | 'commits' | 'users' | 'settings' | 'profile' | 'logs'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'commits' | 'users' | 'settings' | 'profile' | 'logs' | 'analytics'>('overview');
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [recentCommits, setRecentCommits] = useState<Commit[]>([]);
-    const [systemStatus, setSystemStatus] = useState<SystemStatus>({
-        activeUsers: 42,
-        totalCommits: 1256,
-        pendingMerges: 3,
-        systemHealth: 'good'
-    });
+    const [recentCommits, setRecentCommits] = useState<RecentActivityCommit[]>([]);
+    const [stats, setStats] = useState<AdminStats | null>(null);
     const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    // Mock data - replace with actual API calls
-    useEffect(() => {
-        /* Notifications mock data removed */
-
-        const mockCommits: Commit[] = [
-            {
-                id: 'c1',
-                user: 'user123',
-                message: 'Updated revenue projections for Q4 2024',
-                timestamp: new Date(),
-                type: 'edit'
-            },
-            {
-                id: 'c2',
-                user: 'user456',
-                message: 'Merged budget adjustments from development branch',
-                timestamp: new Date(Date.now() - 120000),
-                type: 'merge'
-            },
-            {
-                id: 'c3',
-                user: 'user789',
-                message: 'Uploaded new customer dataset',
-                timestamp: new Date(Date.now() - 300000),
-                type: 'upload'
-            }
-        ];
-
-        setRecentCommits(mockCommits);
-        setSystemStatus({
-            activeUsers: 42,
-            totalCommits: 1256,
-            pendingMerges: 3,
-            systemHealth: 'good'
-        });
+    const fetchDashboardData = useCallback(async () => {
+        try {
+            const [statsData, activityData] = await Promise.all([
+                getAdminStats(),
+                getRecentActivity(10),
+            ]);
+            setStats(statsData);
+            setRecentCommits(activityData.commits);
+            setLastUpdated(new Date());
+            setError(null);
+        } catch (err: any) {
+            console.error('Failed to fetch dashboard data:', err);
+            setError(err.message || 'Failed to load dashboard data');
+        } finally {
+            setLoading(false);
+        }
     }, []);
+
+    // Initial fetch + 30 second auto-refresh
+    useEffect(() => {
+        fetchDashboardData();
+        const interval = setInterval(fetchDashboardData, 30000);
+        return () => clearInterval(interval);
+    }, [fetchDashboardData]);
 
     const toggleSidebar = () => {
         setSidebarOpen(!sidebarOpen);
@@ -93,6 +62,25 @@ const AdminDashboard: React.FC = () => {
         } catch (error) {
             console.error('Failed to log out', error);
         }
+    };
+
+    const formatBytes = (bytes: number): string => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+    const formatTimeAgo = (timestamp: string): string => {
+        const diff = Date.now() - new Date(timestamp).getTime();
+        const mins = Math.floor(diff / 60000);
+        if (mins < 1) return 'Just now';
+        if (mins < 60) return `${mins}m ago`;
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
     };
 
     return (
@@ -165,6 +153,14 @@ const AdminDashboard: React.FC = () => {
                                     <FaListAlt className="nav-icon" />
                                     {sidebarOpen && <span className="nav-text">Audit Logs</span>}
                                 </button>
+                                <button
+                                    className={`nav-item neu-hover ${activeTab === 'analytics' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('analytics')}
+                                >
+                                    {/* @ts-ignore */}
+                                    <FaChartBar className="nav-icon" />
+                                    {sidebarOpen && <span className="nav-text">Analytics</span>}
+                                </button>
 
                             </div>
 
@@ -208,8 +204,9 @@ const AdminDashboard: React.FC = () => {
                     <CommitPage />
                 ) : activeTab === 'users' ? (
                     <UsersPage />
-                )
-                    : activeTab === 'logs' ? (
+                ) : activeTab === 'analytics' ? (
+                    <AnalyticsPage />
+                ) : activeTab === 'logs' ? (
                         <AuditLogsPage />
 
                     ) : activeTab === 'settings' ? (
@@ -225,14 +222,27 @@ const AdminDashboard: React.FC = () => {
                                         <h1 className="header-title">
                                             <span className="title-glow">Admin Dashboard</span>
                                         </h1>
-                                        <p className="header-subtitle">Welcome back, Admin! Here's what's happening today.</p>
+                                        <p className="header-subtitle">
+                                            Welcome back, {user?.displayName || 'Admin'}!
+                                            {lastUpdated && (
+                                                <span style={{ marginLeft: '0.75rem', fontSize: '0.8rem', opacity: 0.7 }}>
+                                                    Last updated: {lastUpdated.toLocaleTimeString()}
+                                                </span>
+                                            )}
+                                        </p>
                                     </div>
 
                                     <div className="header-right">
-                                        {/* Search bar removed */}
-
                                         <div className="header-actions">
-                                            {/* Notifications removed */}
+                                            <button
+                                                className="action-btn neu-button"
+                                                onClick={fetchDashboardData}
+                                                title="Refresh Data"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                            >
+                                                {/* @ts-ignore */}
+                                                <FaSync className="action-icon" style={{ fontSize: '0.85rem' }} />
+                                            </button>
                                             <button
                                                 className="action-btn neu-button"
                                                 onClick={() => setActiveTab('settings')}
@@ -262,6 +272,30 @@ const AdminDashboard: React.FC = () => {
                                 </div>
                             </header>
 
+                            {/* Error Banner */}
+                            {error && (
+                                <div style={{
+                                    margin: '1rem',
+                                    padding: '0.75rem 1rem',
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    borderRadius: '8px',
+                                    color: '#ef4444',
+                                    fontSize: '0.9rem',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center'
+                                }}>
+                                    <span>⚠ {error}</span>
+                                    <button
+                                        onClick={fetchDashboardData}
+                                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', textDecoration: 'underline' }}
+                                    >
+                                        Retry
+                                    </button>
+                                </div>
+                            )}
+
                             {/* Stats Grid */}
                             <div className="stats-grid">
                                 <div className={`stat-card neu-card ${hoveredCard === 'users' ? 'hover-glow' : ''}`}
@@ -273,67 +307,104 @@ const AdminDashboard: React.FC = () => {
                                         <div className="stat-pulse"></div>
                                     </div>
                                     <div className="stat-content">
-                                        <h3 className="stat-title">Active Users</h3>
-                                        <div className="stat-number">{systemStatus.activeUsers}</div>
-                                        <div className="stat-trend positive">↗ +12% this week</div>
-
+                                        <h3 className="stat-title">Total Users</h3>
+                                        <div className="stat-number">
+                                            {loading ? '—' : stats?.totalUsers ?? 0}
+                                        </div>
+                                        <div className="stat-trend positive">
+                                            {stats?.recentSignups ? `+${stats.recentSignups} this week` : 'No new signups'}
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="stat-card neu-card">
+                                <div className={`stat-card neu-card ${hoveredCard === 'commits' ? 'hover-glow' : ''}`}
+                                    onMouseEnter={() => setHoveredCard('commits')}
+                                    onMouseLeave={() => setHoveredCard(null)}>
                                     <div className="stat-icon-container">
                                         {/* @ts-ignore */}
                                         <FaFile className="stat-icon neu-icon" />
                                         <div className="stat-pulse"></div>
                                     </div>
                                     <div className="stat-content">
-                                        <h3 className="stat-title">total versions</h3>
-                                        <div className="stat-number">{systemStatus.totalCommits}</div>
-                                        <div className="stat-trend positive">↗ +8% today</div>
+                                        <h3 className="stat-title">Total Versions</h3>
+                                        <div className="stat-number">
+                                            {loading ? '—' : stats?.totalCommits ?? 0}
+                                        </div>
+                                        <div className="stat-trend positive">
+                                            {stats?.totalWorkbooks ? `${stats.totalWorkbooks} workbooks` : '0 workbooks'}
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div className="stat-card neu-card">
+                                <div className={`stat-card neu-card ${hoveredCard === 'conflicts' ? 'hover-glow' : ''}`}
+                                    onMouseEnter={() => setHoveredCard('conflicts')}
+                                    onMouseLeave={() => setHoveredCard(null)}>
                                     <div className="stat-icon-container">
                                         {/* @ts-ignore */}
                                         <FaGitAlt className="stat-icon neu-icon" />
-                                        <div className="stat-pulse pulse-warning"></div>
+                                        <div className={`stat-pulse ${(stats?.pendingConflicts ?? 0) > 0 ? 'pulse-warning' : ''}`}></div>
                                     </div>
                                     <div className="stat-content">
-                                        <h3 className="stat-title">Pending Merges</h3>
-                                        <div className="stat-number">{systemStatus.pendingMerges}</div>
-                                        <div className="stat-trend warning">⚠ Requires attention</div>
+                                        <h3 className="stat-title">Pending Conflicts</h3>
+                                        <div className="stat-number">
+                                            {loading ? '—' : stats?.pendingConflicts ?? 0}
+                                        </div>
+                                        <div className={`stat-trend ${(stats?.pendingConflicts ?? 0) > 0 ? 'warning' : 'positive'}`}>
+                                            {(stats?.pendingConflicts ?? 0) > 0 ? '⚠ Requires attention' : '✓ All clear'}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="content-grid">
-                                {/* Activity Panel Only - Notifications Removed */}
+                                {/* Activity Panel */}
                                 <div className="content-panel glass-panel" style={{ gridColumn: '1 / -1' }}>
                                     <div className="panel-header">
                                         <h2 className="panel-title">Recent Activity</h2>
-                                        {/* Filter buttons removed as requested */}
+                                        {recentCommits.length > 0 && (
+                                            <span className="panel-badge neu-badge" style={{ background: 'rgba(99,102,241,0.2)', color: '#6366f1' }}>
+                                                {recentCommits.length} items
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="activity-list">
-                                        {recentCommits.map((commit, index) => (
-                                            <div
-                                                key={commit.id}
-                                                className="activity-item slide-in"
-                                                style={{ animationDelay: `${index * 0.1}s` }}
-                                            >
-                                                {/* Icons/Buttons removed as requested */}
-                                                <div className="activity-content">
-                                                    <div className="activity-header">
-                                                        <span className="activity-user">{commit.user}</span>
-                                                        {/* activity-type removed */}
-                                                    </div>
-                                                    <p className="activity-message">{commit.message}</p>
-                                                    <span className="activity-time">
-                                                        {commit.timestamp.toLocaleString()}
-                                                    </span>
-                                                </div>
+                                        {loading ? (
+                                            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                                                Loading activity...
                                             </div>
-                                        ))}
+                                        ) : recentCommits.length === 0 ? (
+                                            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                                                No activity yet. Commit changes to a workbook to see activity here.
+                                            </div>
+                                        ) : (
+                                            recentCommits.map((commit, index) => (
+                                                <div
+                                                    key={commit.id}
+                                                    className="activity-item slide-in"
+                                                    style={{ animationDelay: `${index * 0.1}s` }}
+                                                >
+                                                    <div className="activity-content">
+                                                        <div className="activity-header">
+                                                            <span className="activity-user">{commit.user_name || commit.user_email || commit.user_id}</span>
+                                                            <span style={{
+                                                                fontSize: '0.75rem',
+                                                                padding: '0.15rem 0.5rem',
+                                                                borderRadius: '12px',
+                                                                background: 'rgba(99, 102, 241, 0.1)',
+                                                                color: '#6366f1',
+                                                                fontWeight: 500
+                                                            }}>
+                                                                {commit.workbook_name}
+                                                            </span>
+                                                        </div>
+                                                        <p className="activity-message">{commit.message}</p>
+                                                        <span className="activity-time">
+                                                            {formatTimeAgo(commit.timestamp)} · {commit.changes_count} cell changes
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -342,36 +413,33 @@ const AdminDashboard: React.FC = () => {
                             <div className="content-panel glass-panel full-width">
                                 <div className="panel-header">
                                     <h2 className="panel-title">System Overview</h2>
-                                    <button className="view-all-btn">
-                                        View Detailed Report →
-                                    </button>
                                 </div>
                                 <div className="system-overview">
                                     <div className="overview-item">
-                                        <h3>Storage Usage</h3>
+                                        <h3>Database Storage</h3>
                                         <div className="progress-container">
                                             <div className="progress-track neu-progress">
                                                 <div
                                                     className="progress-fill progress-glow"
-                                                    style={{ width: '65%' }}
+                                                    style={{ width: `${Math.min(((stats?.storageBytesUsed ?? 0) / (2 * 1024 * 1024 * 1024)) * 100, 100)}%` }}
                                                 ></div>
                                             </div>
-                                            <span>65% used (1.3GB of 2GB)</span>
+                                            <span>
+                                                {loading ? '—' : `${formatBytes(stats?.storageBytesUsed ?? 0)} used`}
+                                            </span>
                                         </div>
                                     </div>
 
                                     <div className="overview-item">
-                                        <h3>Active Sessions</h3>
+                                        <h3>Workbooks</h3>
                                         <div className="sessions-display">
                                             <div className="session-dots">
-                                                <div className="session-dot"></div>
-                                                <div className="session-dot"></div>
-                                                <div className="session-dot"></div>
-                                                <div className="session-dot"></div>
-                                                <div className="session-dot"></div>
-                                                <div className="session-dot"></div>
+                                                {/* @ts-ignore */}
+                                                <FaDatabase style={{ color: '#6366f1', fontSize: '1.2rem' }} />
                                             </div>
-                                            <div className="sessions-count">24</div>
+                                            <div className="sessions-count">
+                                                {loading ? '—' : stats?.totalWorkbooks ?? 0}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -379,7 +447,7 @@ const AdminDashboard: React.FC = () => {
                                         <h3>Server Status</h3>
                                         <div className="status-container">
                                             <div className="status-indicator"></div>
-                                            <span>All servers operational</span>
+                                            <span>{error ? 'Connection issue' : 'All systems operational'}</span>
                                         </div>
                                     </div>
                                 </div>

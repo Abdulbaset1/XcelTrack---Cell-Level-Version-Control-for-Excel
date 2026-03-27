@@ -1,45 +1,54 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FaDownload } from 'react-icons/fa';
-
-interface AuditLog {
-    id: string;
-    timestamp: string;
-    user: string;
-    action: string;
-    details: string;
-    ipAddress: string;
-    status: 'success' | 'failed';
-}
-
-interface SystemMetric {
-    timestamp: string;
-    activeUsers: number;
-    totalRequests: number;
-    avgResponseTime: number;
-    errorRate: number;
-}
+import { getAdminAnalytics, AdminAnalytics, AuditLog } from '../services/api';
 
 const AnalyticsPage: React.FC = () => {
+    const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const auditLogs: AuditLog[] = [
-        { id: 'al1', timestamp: '2025-12-03 14:23:15', user: 'Maleeha@example.com', action: 'User Created', details: 'New user john_analyst added to system', ipAddress: '192.168.1.100', status: 'success' },
-        { id: 'al2', timestamp: '2025-12-03 13:45:22', user: 'Batool@example.com', action: 'Permission Changed', details: 'User mike elevated to analyst role', ipAddress: '192.168.1.50', status: 'success' },
-        { id: 'al3', timestamp: '2025-12-03 12:10:08', user: 'Ali@example.com', action: 'File Uploaded', details: 'Large dataset uploaded (2.5GB)', ipAddress: '192.168.1.150', status: 'success' },
+    const fetchAnalytics = useCallback(async () => {
+        try {
+            const data = await getAdminAnalytics();
+            setAnalytics(data);
+            setError(null);
+        } catch (err: any) {
+            setError(err.message || 'Failed to load analytics');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
-        { id: 'al6', timestamp: '2025-12-02 16:42:12', user: 'Aly@example.com', action: 'Data Export', details: 'User exported 5000 records to CSV', ipAddress: '192.168.1.200', status: 'success' },
-        { id: 'al8', timestamp: '2025-12-02 14:05:33', user: 'Amna@example.com', action: 'Unauthorized Access Attempt', details: 'Attempted access to restricted admin panel', ipAddress: '192.168.1.175', status: 'failed' },
-        { id: 'al9', timestamp: '2025-12-02 13:20:10', user: 'Rehana@example.com', action: 'Report Generated', details: 'Compliance report generated and downloaded', ipAddress: '192.168.1.120', status: 'success' },
-    ];
+    useEffect(() => {
+        fetchAnalytics();
+        const interval = setInterval(fetchAnalytics, 60000);
+        return () => clearInterval(interval);
+    }, [fetchAnalytics]);
 
-    const systemMetrics: SystemMetric[] = [
-        { timestamp: '2025-12-03', activeUsers: 42, totalRequests: 15420, avgResponseTime: 245, errorRate: 0.8 },
-        { timestamp: '2025-12-02', activeUsers: 38, totalRequests: 14200, avgResponseTime: 235, errorRate: 0.6 },
-        { timestamp: '2025-12-01', activeUsers: 45, totalRequests: 16800, avgResponseTime: 260, errorRate: 1.2 },
-    ];
+    const formatBytes = (bytes: number): string => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
 
     const downloadReport = (type: string) => {
+        if (!analytics) return;
+
+        const logs = analytics.recentAuditLogs;
+        const headers = ['Timestamp', 'User Email', 'Action', 'Details', 'IP Address', 'Status'];
+        const rows = logs.map(log => [
+            new Date(log.timestamp).toLocaleString(),
+            log.user_email || log.user_id || 'System',
+            log.action,
+            log.details ? JSON.stringify(log.details) : '',
+            log.ip_address || 'N/A',
+            log.action.includes('FAIL') ? 'FAILED' : 'SUCCESS',
+        ]);
+        const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+
         const reportName = `${type}_report_${new Date().toISOString().split('T')[0]}.csv`;
-        const csvContent = generateCSV(type);
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -49,40 +58,13 @@ const AnalyticsPage: React.FC = () => {
         window.URL.revokeObjectURL(url);
     };
 
-    const generateCSV = (type: string): string => {
-        if (type === 'compliance') {
-            const headers = ['Timestamp', 'User', 'Action', 'Details', 'IP Address', 'Status'];
-            const rows = auditLogs.map(log => [
-                log.timestamp,
-                log.user,
-                log.action,
-                log.details,
-                log.ipAddress,
-                log.status.toUpperCase(),
-            ]);
-            return [headers, ...rows].map(row => row.join(',')).join('\n');
-        } else if (type === 'auditlogs') {
-            const headers = ['Timestamp', 'User', 'Action', 'Details', 'IP Address', 'Status'];
-            const rows = auditLogs.map(log => [
-                log.timestamp,
-                log.user,
-                log.action,
-                log.details,
-                log.ipAddress,
-                log.status.toUpperCase(),
-            ]);
-            return [headers, ...rows].map(row => row.join(',')).join('\n');
-        }
-        return '';
-    };
-
     return (
         <div className="analytics-page" style={{ padding: '0' }}>
             {/* Header */}
             <header className="glass-header">
                 <div className="header-content">
                     <div className="header-left">
-                        <h1 className="header-title">Analytics & Reporting</h1>
+                        <h1 className="header-title">Analytics &amp; Reporting</h1>
                         <p className="header-subtitle">Monitor platform usage, view audit logs, and generate compliance reports.</p>
                     </div>
                 </div>
@@ -90,10 +72,21 @@ const AnalyticsPage: React.FC = () => {
 
             {/* Main Content */}
             <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+                {/* Error State */}
+                {error && (
+                    <div style={{ padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '8px', color: '#ef4444' }}>
+                        {error}
+                        <button onClick={fetchAnalytics} style={{ marginLeft: '1rem', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', textDecoration: 'underline' }}>
+                            Retry
+                        </button>
+                    </div>
+                )}
+
                 {/* Report Download Panel */}
                 <div className="content-panel glass-panel">
                     <div className="panel-header">
-                        <h2 className="panel-title">Generate & Download Reports</h2>
+                        <h2 className="panel-title">Generate &amp; Download Reports</h2>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem', marginTop: '1rem' }}>
@@ -105,14 +98,15 @@ const AnalyticsPage: React.FC = () => {
                             </p>
                             <button
                                 onClick={() => downloadReport('compliance')}
+                                disabled={loading || !analytics}
                                 style={{
                                     width: '100%',
                                     padding: '0.6rem',
-                                    background: '#10b981',
+                                    background: loading ? '#94a3b8' : '#10b981',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '6px',
-                                    cursor: 'pointer',
+                                    cursor: loading ? 'not-allowed' : 'pointer',
                                     fontWeight: 600,
                                     display: 'flex',
                                     alignItems: 'center',
@@ -120,16 +114,16 @@ const AnalyticsPage: React.FC = () => {
                                     gap: '0.5rem',
                                     marginTop: 'auto',
                                     transition: 'all .3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    position: 'relative',
-                                    overflow: 'hidden',
                                 }}
                                 onMouseEnter={e => {
-                                    e.currentTarget.style.background = '#059669';
-                                    e.currentTarget.style.transform = 'translateY(-3px)';
-                                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(16, 185, 129, 0.4)';
+                                    if (!loading) {
+                                        e.currentTarget.style.background = '#059669';
+                                        e.currentTarget.style.transform = 'translateY(-3px)';
+                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(16, 185, 129, 0.4)';
+                                    }
                                 }}
                                 onMouseLeave={e => {
-                                    e.currentTarget.style.background = '#10b981';
+                                    e.currentTarget.style.background = loading ? '#94a3b8' : '#10b981';
                                     e.currentTarget.style.transform = 'translateY(0)';
                                     e.currentTarget.style.boxShadow = 'none';
                                 }}
@@ -146,15 +140,18 @@ const AnalyticsPage: React.FC = () => {
                                 Comprehensive audit logs showing user activity, access logs, and system changes for monitoring and auditing.
                             </p>
                             <button
-                                onClick={() => downloadReport('auditlogs')}
+                                onClick={() => {
+                                    window.location.href = 'http://localhost:5000/api/admin/audit-logs/export';
+                                }}
+                                disabled={loading}
                                 style={{
                                     width: '100%',
                                     padding: '0.6rem',
-                                    background: '#3b82f6',
+                                    background: loading ? '#94a3b8' : '#3b82f6',
                                     color: 'white',
                                     border: 'none',
                                     borderRadius: '6px',
-                                    cursor: 'pointer',
+                                    cursor: loading ? 'not-allowed' : 'pointer',
                                     fontWeight: 600,
                                     display: 'flex',
                                     alignItems: 'center',
@@ -162,22 +159,22 @@ const AnalyticsPage: React.FC = () => {
                                     gap: '0.5rem',
                                     marginTop: 'auto',
                                     transition: 'all .3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    position: 'relative',
-                                    overflow: 'hidden',
                                 }}
                                 onMouseEnter={e => {
-                                    e.currentTarget.style.background = '#1e40af';
-                                    e.currentTarget.style.transform = 'translateY(-3px)';
-                                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(59, 130, 246, 0.4)';
+                                    if (!loading) {
+                                        e.currentTarget.style.background = '#1e40af';
+                                        e.currentTarget.style.transform = 'translateY(-3px)';
+                                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(59, 130, 246, 0.4)';
+                                    }
                                 }}
                                 onMouseLeave={e => {
-                                    e.currentTarget.style.background = '#3b82f6';
+                                    e.currentTarget.style.background = loading ? '#94a3b8' : '#3b82f6';
                                     e.currentTarget.style.transform = 'translateY(0)';
                                     e.currentTarget.style.boxShadow = 'none';
                                 }}
                             >
                                 {/* @ts-ignore */}
-                                <FaDownload size={14} /> Download CSV
+                                <FaDownload size={14} /> Export Full Logs (CSV)
                             </button>
                         </div>
                     </div>
@@ -186,36 +183,87 @@ const AnalyticsPage: React.FC = () => {
                 {/* System Metrics */}
                 <div className="content-panel glass-panel">
                     <div className="panel-header">
-                        <h2 className="panel-title">System Status & Metrics</h2>
+                        <h2 className="panel-title">System Status &amp; Metrics</h2>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginTop: '1rem' }}>
                         <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.1)' }}>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Active Users (Today)</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#3b82f6', marginTop: '0.5rem' }}>{systemMetrics[0].activeUsers}</div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Users</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#3b82f6', marginTop: '0.5rem' }}>
+                                {loading ? '—' : analytics?.systemMetrics.totalUsers ?? 0}
+                            </div>
                         </div>
 
                         <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.1)' }}>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Requests</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#3b82f6', marginTop: '0.5rem' }}>{systemMetrics[0].totalRequests.toLocaleString()}</div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Workbooks</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#3b82f6', marginTop: '0.5rem' }}>
+                                {loading ? '—' : analytics?.systemMetrics.totalWorkbooks ?? 0}
+                            </div>
                         </div>
 
                         <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.1)' }}>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Avg Response Time</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#3b82f6', marginTop: '0.5rem' }}>{systemMetrics[0].avgResponseTime}ms</div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Commits</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#3b82f6', marginTop: '0.5rem' }}>
+                                {loading ? '—' : analytics?.systemMetrics.totalCommits ?? 0}
+                            </div>
                         </div>
 
                         <div style={{ padding: '1rem', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.05)', border: '1px solid rgba(99, 102, 241, 0.1)' }}>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Error Rate</div>
-                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#ef4444', marginTop: '0.5rem' }}>{systemMetrics[0].errorRate}%</div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Database Size</div>
+                            <div style={{ fontSize: '2rem', fontWeight: 700, color: '#6366f1', marginTop: '0.5rem' }}>
+                                {loading ? '—' : formatBytes(analytics?.systemMetrics.dbSizeBytes ?? 0)}
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                {/* User Growth & Commit Activity */}
+                {analytics && (analytics.userGrowth.length > 0 || analytics.commitActivity.length > 0) && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                        {/* User Growth */}
+                        <div className="content-panel glass-panel">
+                            <div className="panel-header">
+                                <h2 className="panel-title">User Growth (7 Days)</h2>
+                            </div>
+                            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {analytics.userGrowth.length === 0 ? (
+                                    <div style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>No signups in the last 7 days</div>
+                                ) : (
+                                    analytics.userGrowth.map((day, idx) => (
+                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.05)' }}>
+                                            <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>{new Date(day.date).toLocaleDateString()}</span>
+                                            <span style={{ fontWeight: 700, color: '#10b981' }}>+{day.count} users</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Commit Activity */}
+                        <div className="content-panel glass-panel">
+                            <div className="panel-header">
+                                <h2 className="panel-title">Commit Activity (7 Days)</h2>
+                            </div>
+                            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                {analytics.commitActivity.length === 0 ? (
+                                    <div style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>No commits in the last 7 days</div>
+                                ) : (
+                                    analytics.commitActivity.map((day, idx) => (
+                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.05)' }}>
+                                            <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>{new Date(day.date).toLocaleDateString()}</span>
+                                            <span style={{ fontWeight: 700, color: '#3b82f6' }}>{day.count} commits</span>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Audit Logs */}
                 <div className="content-panel glass-panel">
                     <div className="panel-header">
-                        <h2 className="panel-title">Audit Logs</h2>
+                        <h2 className="panel-title">Recent Audit Logs</h2>
                     </div>
 
                     <div style={{ overflowX: 'auto', marginTop: '1rem' }}>
@@ -231,27 +279,44 @@ const AnalyticsPage: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {auditLogs.map(log => (
-                                    <tr key={log.id} style={{ borderBottom: '1px solid rgba(99, 102, 241, 0.05)' }}>
-                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{log.timestamp}</td>
-                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{log.user}</td>
-                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{log.action}</td>
-                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.details}</td>
-                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.85rem' }}>{log.ipAddress}</td>
-                                        <td style={{ padding: '1rem' }}>
-                                            <span style={{
-                                                padding: '0.4rem 0.8rem',
-                                                borderRadius: '20px',
-                                                fontSize: '0.8rem',
-                                                fontWeight: 600,
-                                                background: log.status === 'success' ? '#d1fae5' : '#fee2e2',
-                                                color: log.status === 'success' ? '#065f46' : '#7f1d1d',
-                                            }}>
-                                                {log.status.toUpperCase()}
-                                            </span>
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading...</td>
+                                    </tr>
+                                ) : !analytics?.recentAuditLogs?.length ? (
+                                    <tr>
+                                        <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                            No audit logs yet. Admin actions will appear here.
                                         </td>
                                     </tr>
-                                ))}
+                                ) : (
+                                    analytics.recentAuditLogs.map(log => {
+                                        const isFailed = log.action.includes('FAIL');
+                                        return (
+                                            <tr key={log.id} style={{ borderBottom: '1px solid rgba(99, 102, 241, 0.05)' }}>
+                                                <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{new Date(log.timestamp).toLocaleString()}</td>
+                                                <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{log.user_email || log.user_id || 'System'}</td>
+                                                <td style={{ padding: '1rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{log.action}</td>
+                                                <td style={{ padding: '1rem', color: 'var(--text-secondary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {typeof log.details === 'string' ? log.details : JSON.stringify(log.details)}
+                                                </td>
+                                                <td style={{ padding: '1rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.85rem' }}>{log.ip_address || 'N/A'}</td>
+                                                <td style={{ padding: '1rem' }}>
+                                                    <span style={{
+                                                        padding: '0.4rem 0.8rem',
+                                                        borderRadius: '20px',
+                                                        fontSize: '0.8rem',
+                                                        fontWeight: 600,
+                                                        background: isFailed ? '#fee2e2' : '#d1fae5',
+                                                        color: isFailed ? '#7f1d1d' : '#065f46',
+                                                    }}>
+                                                        {isFailed ? 'FAILED' : 'SUCCESS'}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
                             </tbody>
                         </table>
                     </div>

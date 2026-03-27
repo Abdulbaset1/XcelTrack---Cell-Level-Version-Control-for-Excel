@@ -233,6 +233,20 @@ const createTables = async () => {
         `);
         console.log('Commit changes table ready');
 
+        // Audit Logs Table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(255),
+                user_email VARCHAR(255),
+                action VARCHAR(100) NOT NULL,
+                details JSONB,
+                ip_address VARCHAR(45),
+                timestamp TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        console.log('Audit logs table ready');
+
         // Create indexes for optimized query performance
         await pool.query(`
             CREATE INDEX IF NOT EXISTS idx_workbooks_owner_id ON workbooks(owner_id);
@@ -247,6 +261,8 @@ const createTables = async () => {
             CREATE INDEX IF NOT EXISTS idx_cell_versions_cell_id ON cell_versions(cell_id);
             CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
             CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_verifications(email);
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+            CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
         `);
         console.log('Database indexes created successfully');
 
@@ -258,6 +274,18 @@ const createTables = async () => {
 createTables();
 
 const diffEngine = new DiffEngine(pool);
+
+// --- Audit Log Helper ---
+const logAuditEvent = async (userId, userEmail, action, details, ipAddress) => {
+    try {
+        await pool.query(
+            'INSERT INTO audit_logs (user_id, user_email, action, details, ip_address) VALUES ($1, $2, $3, $4, $5)',
+            [userId || null, userEmail || null, action, details ? JSON.stringify(details) : null, ipAddress || null]
+        );
+    } catch (err) {
+        logger.error('Failed to write audit log', { error: err.message, action });
+    }
+};
 
 // --- OTP Endpoints ---
 
@@ -775,10 +803,14 @@ app.post('/api/admin/users', adminLimiter, async (req, res) => {
             values
         );
 
+        // 3. Audit log
+        await logAuditEvent(null, email, 'USER_CREATED', { targetEmail: email, targetName: name, role: role || 'user' }, req.ip);
+
         logger.info('Admin created user successfully', { uid: userRecord.uid, email, role: role || 'user' });
         res.status(201).json({ message: 'User created successfully', user: result.rows[0] });
     } catch (error) {
         logger.error('Error creating user', { error: error.message, email });
+        await logAuditEvent(null, email, 'USER_CREATE_FAILED', { error: error.message }, req.ip);
         res.status(500).json({ error: error.message });
     }
 });
@@ -813,11 +845,15 @@ app.put('/api/admin/users/:uid', adminLimiter, async (req, res) => {
             return res.status(404).json({ error: 'User not found in database' });
         }
 
+        // Audit log
+        await logAuditEvent(null, email, 'USER_UPDATED', { targetUid: uid, email, name, role }, req.ip);
+
         logger.info('Admin updated user successfully', { uid, email });
         res.json({ message: 'User updated successfully', user: result.rows[0] });
 
     } catch (error) {
         logger.error('Error updating user', { error: error.message, uid });
+        await logAuditEvent(null, null, 'USER_UPDATE_FAILED', { targetUid: uid, error: error.message }, req.ip);
         res.status(500).json({ error: error.message });
     }
 });
@@ -842,12 +878,223 @@ app.delete('/api/admin/users/:uid', adminLimiter, async (req, res) => {
             console.warn('User deleted from Auth but not found in Postgres');
         }
 
+        // Audit log
+        const deletedEmail = result.rows.length > 0 ? result.rows[0].email : 'unknown';
+        await logAuditEvent(null, deletedEmail, 'USER_DELETED', { targetUid: uid, email: deletedEmail }, req.ip);
+
         logger.info('Admin deleted user successfully', { uid });
         res.json({ message: 'User deleted successfully' });
 
     } catch (error) {
         logger.error('Error deleting user', { error: error.message, uid });
+        await logAuditEvent(null, null, 'USER_DELETE_FAILED', { targetUid: uid, error: error.message }, req.ip);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ============================================
+// ADMIN DASHBOARD ENDPOINTS
+// ============================================
+
+// Admin Stats - Real-time overview data
+app.get('/api/admin/stats', async (req, res) => {
+    try {
+        const [usersResult, workbooksResult, commitsResult, conflictsResult, recentSignupsResult, dbSizeResult] = await Promise.all([
+            pool.query('SELECT COUNT(*) as count FROM users'),
+            pool.query('SELECT COUNT(*) as count FROM workbooks'),
+            pool.query('SELECT COUNT(*) as count FROM commits'),
+            pool.query("SELECT COUNT(*) as count FROM conflicts WHERE status = 'pending'"),
+            pool.query("SELECT COUNT(*) as count FROM users WHERE created_at > NOW() - INTERVAL '7 days'"),
+            pool.query("SELECT pg_database_size(current_database()) as size"),
+        ]);
+
+        res.json({
+            totalUsers: parseInt(usersResult.rows[0].count),
+            totalWorkbooks: parseInt(workbooksResult.rows[0].count),
+            totalCommits: parseInt(commitsResult.rows[0].count),
+            pendingConflicts: parseInt(conflictsResult.rows[0].count),
+            recentSignups: parseInt(recentSignupsResult.rows[0].count),
+            storageBytesUsed: parseInt(dbSizeResult.rows[0].size),
+        });
+    } catch (error) {
+        logger.error('Error fetching admin stats', { error: error.message });
+        res.status(500).json({ error: 'Failed to fetch admin stats' });
+    }
+});
+
+// Admin Recent Activity - all commits across all users
+app.get('/api/admin/recent-activity', async (req, res) => {
+    const { limit = 20 } = req.query;
+    try {
+        const result = await pool.query(
+            `SELECT
+                c.id,
+                c.message,
+                c.user_id,
+                c.timestamp,
+                c.hash,
+                c.workbook_id,
+                w.name as workbook_name,
+                u.name as user_name,
+                u.email as user_email,
+                COUNT(cv.id) as changes_count
+             FROM commits c
+             JOIN workbooks w ON c.workbook_id = w.id
+             LEFT JOIN users u ON c.user_id = u.firebase_uid
+             LEFT JOIN cell_versions cv ON c.id = cv.commit_id
+             GROUP BY c.id, w.name, u.name, u.email
+             ORDER BY c.timestamp DESC
+             LIMIT $1`,
+            [limit]
+        );
+
+        res.json({ commits: result.rows });
+    } catch (error) {
+        logger.error('Error fetching recent activity', { error: error.message });
+        res.status(500).json({ error: 'Failed to fetch recent activity' });
+    }
+});
+
+// Audit Logs - Fetch
+app.get('/api/admin/audit-logs', async (req, res) => {
+    const { limit = 100, offset = 0 } = req.query;
+    try {
+        const result = await pool.query(
+            'SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT $1 OFFSET $2',
+            [limit, offset]
+        );
+
+        res.json({ logs: result.rows });
+    } catch (error) {
+        logger.error('Error fetching audit logs', { error: error.message });
+        res.status(500).json({ error: 'Failed to fetch audit logs' });
+    }
+});
+
+// Audit Logs - Create (for manual/programmatic logging)
+app.post('/api/admin/audit-logs', async (req, res) => {
+    const { user_id, user_email, action, details, ip_address } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO audit_logs (user_id, user_email, action, details, ip_address) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [user_id, user_email, action, details ? JSON.stringify(details) : null, ip_address]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        logger.error('Error creating audit log', { error: error.message });
+        res.status(500).json({ error: 'Failed to create audit log' });
+    }
+});
+
+// Audit Logs - Export as CSV
+app.get('/api/admin/audit-logs/export', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM audit_logs ORDER BY timestamp DESC');
+        const logs = result.rows;
+
+        const headers = ['ID', 'Timestamp', 'User ID', 'User Email', 'Action', 'Details', 'IP Address'];
+        const csvRows = logs.map(log => [
+            log.id,
+            new Date(log.timestamp).toISOString(),
+            log.user_id || '',
+            log.user_email || '',
+            log.action,
+            log.details ? JSON.stringify(log.details).replace(/"/g, '""') : '',
+            log.ip_address || ''
+        ].map(v => `"${v}"`).join(','));
+
+        const csvContent = [headers.join(','), ...csvRows].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="audit_logs_${new Date().toISOString().split('T')[0]}.csv"`);
+        res.send(csvContent);
+    } catch (error) {
+        logger.error('Error exporting audit logs', { error: error.message });
+        res.status(500).json({ error: 'Failed to export audit logs' });
+    }
+});
+
+// Compliance Report
+app.get('/api/admin/compliance-report', async (req, res) => {
+    try {
+        const [logsCount, userDist, lastLog] = await Promise.all([
+            pool.query('SELECT COUNT(*) as count FROM audit_logs'),
+            pool.query('SELECT role, COUNT(*) as count FROM users GROUP BY role'),
+            pool.query('SELECT action, timestamp FROM audit_logs ORDER BY timestamp DESC LIMIT 1'),
+        ]);
+
+        const userDistribution = {};
+        userDist.rows.forEach(row => {
+            userDistribution[row.role || 'unknown'] = parseInt(row.count);
+        });
+
+        res.json({
+            reportGeneratedAt: new Date().toISOString(),
+            auditLogging: {
+                status: 'active',
+                totalLogs: parseInt(logsCount.rows[0].count),
+                lastLoggedAction: lastLog.rows.length > 0 ? lastLog.rows[0].action : 'N/A',
+            },
+            userDistribution,
+            retentionPolicy: '90 days',
+            backupStatus: 'PostgreSQL WAL + Daily Snapshots',
+        });
+    } catch (error) {
+        logger.error('Error generating compliance report', { error: error.message });
+        res.status(500).json({ error: 'Failed to generate compliance report' });
+    }
+});
+
+// Admin Analytics - aggregated data
+app.get('/api/admin/analytics', async (req, res) => {
+    try {
+        const [userGrowth, commitActivity, systemMetrics, recentAuditLogs] = await Promise.all([
+            // Users created per day (last 7 days)
+            pool.query(`
+                SELECT DATE(created_at) as date, COUNT(*) as count
+                FROM users
+                WHERE created_at > NOW() - INTERVAL '7 days'
+                GROUP BY DATE(created_at)
+                ORDER BY date DESC
+            `),
+            // Commits per day (last 7 days)
+            pool.query(`
+                SELECT DATE(timestamp) as date, COUNT(*) as count
+                FROM commits
+                WHERE timestamp > NOW() - INTERVAL '7 days'
+                GROUP BY DATE(timestamp)
+                ORDER BY date DESC
+            `),
+            // Overall system counts
+            pool.query(`
+                SELECT
+                    (SELECT COUNT(*) FROM users) as total_users,
+                    (SELECT COUNT(*) FROM workbooks) as total_workbooks,
+                    (SELECT COUNT(*) FROM commits) as total_commits,
+                    (SELECT COUNT(*) FROM cells) as total_cells,
+                    (SELECT pg_database_size(current_database())) as db_size
+            `),
+            // Recent audit logs for analytics page
+            pool.query('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 20'),
+        ]);
+
+        const metrics = systemMetrics.rows[0];
+
+        res.json({
+            userGrowth: userGrowth.rows,
+            commitActivity: commitActivity.rows,
+            systemMetrics: {
+                totalUsers: parseInt(metrics.total_users),
+                totalWorkbooks: parseInt(metrics.total_workbooks),
+                totalCommits: parseInt(metrics.total_commits),
+                totalCells: parseInt(metrics.total_cells),
+                dbSizeBytes: parseInt(metrics.db_size),
+            },
+            recentAuditLogs: recentAuditLogs.rows,
+        });
+    } catch (error) {
+        logger.error('Error fetching analytics', { error: error.message });
+        res.status(500).json({ error: 'Failed to fetch analytics data' });
     }
 });
 

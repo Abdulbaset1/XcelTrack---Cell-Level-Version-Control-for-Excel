@@ -203,3 +203,76 @@ export const reorderWorksheets = async (workbookId: string, orders: { id: string
     if (!response.ok) throw new Error('Failed to reorder worksheets');
     return response.json();
 };
+
+// ============================================
+// ADMIN DASHBOARD API
+// ============================================
+
+export interface AdminStats {
+    totalUsers: number;
+    totalWorkbooks: number;
+    totalCommits: number;
+    pendingConflicts: number;
+    recentSignups: number;
+    storageBytesUsed: number;
+}
+
+export interface RecentActivityCommit {
+    id: number;
+    message: string;
+    user_id: string;
+    timestamp: string;
+    hash: string;
+    workbook_id: number;
+    workbook_name: string;
+    user_name: string;
+    user_email: string;
+    changes_count: number;
+}
+
+export interface AuditLog {
+    id: number;
+    user_id: string;
+    user_email: string;
+    action: string;
+    details: any;
+    ip_address: string;
+    timestamp: string;
+}
+
+export interface AdminAnalytics {
+    userGrowth: { date: string; count: number }[];
+    commitActivity: { date: string; count: number }[];
+    systemMetrics: {
+        totalUsers: number;
+        totalWorkbooks: number;
+        totalCommits: number;
+        totalCells: number;
+        dbSizeBytes: number;
+    };
+    recentAuditLogs: AuditLog[];
+}
+
+export const getAdminStats = async (): Promise<AdminStats> => {
+    const response = await fetch(`${API_URL}/admin/stats`);
+    if (!response.ok) throw new Error('Failed to fetch admin stats');
+    return response.json();
+};
+
+export const getRecentActivity = async (limit: number = 20): Promise<{ commits: RecentActivityCommit[] }> => {
+    const response = await fetch(`${API_URL}/admin/recent-activity?limit=${limit}`);
+    if (!response.ok) throw new Error('Failed to fetch recent activity');
+    return response.json();
+};
+
+export const getAuditLogs = async (limit: number = 100, offset: number = 0): Promise<{ logs: AuditLog[] }> => {
+    const response = await fetch(`${API_URL}/admin/audit-logs?limit=${limit}&offset=${offset}`);
+    if (!response.ok) throw new Error('Failed to fetch audit logs');
+    return response.json();
+};
+
+export const getAdminAnalytics = async (): Promise<AdminAnalytics> => {
+    const response = await fetch(`${API_URL}/admin/analytics`);
+    if (!response.ok) throw new Error('Failed to fetch analytics');
+    return response.json();
+};
