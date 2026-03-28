@@ -13,7 +13,6 @@ const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
         return <div className="flex justify-center items-center h-screen text-white">Loading...</div>;
     }
 
-    // Check if user is logged in and has Admin role
     // Role check is case-insensitive to handle 'admin', 'Admin', etc.
     if (!user || user.role?.toLowerCase() !== 'admin') {
         return <Navigate to="/dashboard" replace />;
@@ -21,5 +20,4 @@ const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
 
     return <>{children}</>;
 };
-
 export default AdminRoute;

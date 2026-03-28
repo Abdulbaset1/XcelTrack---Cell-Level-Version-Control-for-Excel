@@ -234,5 +234,4 @@ class FileProcessor extends EventEmitter {
         };
     }
 }
-
 module.exports = FileProcessor;

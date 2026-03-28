@@ -262,35 +262,52 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
 
             isInitialized.current = true;
 
-            // --- Editing fix: forward dblclick / keystrokes to Univer's edit command ---
-            // Some environments block Univer's internal ShortcutService from catching events.
-            // We explicitly dispatch the StartEditCellOperation command on double-click or
-            // when the user starts typing while a cell is selected.
-            const startEditing = (initialChar?: string) => {
-                try {
-                    fUniver.executeCommand(
-                        'sheet.operation.set-cell-edit-visible',
-                        { visible: true, eventType: 2, keycode: initialChar ? initialChar.charCodeAt(0) : undefined }
-                    );
-                } catch (_) {
-                    // fallback: try alternate command id
-                    try {
-                        fUniver.executeCommand('sheet.command.set-cell-edit-visible', { visible: true });
-                    } catch (__) { /* ignore */ }
+            // --- Editing fix: forward dblclick / keystrokes into the active cell value ---
+            // Instead of relying on internal Univer edit commands (which can change
+            // between versions), we directly mutate the active cell's value when the
+            // user types while a cell is selected.
+            const applyCharToActiveCell = (ch: string) => {
+                const wb = fUniverRef.current?.getActiveWorkbook();
+                const sh = wb?.getActiveSheet();
+                const range = sh?.getSelection()?.getActiveRange();
+                if (!range) return;
+
+                const current = range.getValue() as any;
+                let currentText = '';
+                if (current != null) {
+                    if (typeof current === 'object' && current.v !== undefined) {
+                        currentText = String(current.v ?? '');
+                    } else {
+                        currentText = String(current);
+                    }
                 }
+
+                const next = `${currentText}${ch}`;
+                range.setValue(next);
             };
 
-            // Double-click on the canvas → enter edit mode
+            const clearActiveCell = () => {
+                const wb = fUniverRef.current?.getActiveWorkbook();
+                const sh = wb?.getActiveSheet();
+                const range = sh?.getSelection()?.getActiveRange();
+                range?.setValue('');
+            };
+
+            // Double-click on the canvas – keep default Univer behaviour, but
+            // ensure the container has focus so subsequent key presses work.
             const onCanvasDblClick = (e: MouseEvent) => {
                 const target = e.target as HTMLElement;
                 if (target.tagName === 'CANVAS' || containerRef.current?.contains(target)) {
-                    startEditing();
+                    if (containerRef.current) {
+                        containerRef.current.focus();
+                    }
                 }
             };
             containerRef.current!.addEventListener('dblclick', onCanvasDblClick);
 
             // Window keydown → if a printable key is pressed while a cell is selected and
-            // the user is NOT already typing in an input/textarea, start editing
+            // the user is NOT already typing in an input/textarea, directly update
+            // the active cell's value so users can "just type" like in Excel.
             const onWindowKeyDown = (e: KeyboardEvent) => {
                 const activeEl = document.activeElement;
                 const isTypingInInput =
@@ -300,11 +317,17 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
                         (activeEl as HTMLElement).isContentEditable
                     );
                 if (isTypingInInput) return;
-                // Printable characters (single char, no ctrl/meta/alt) or F2
+
+                // Handle backspace/delete to clear the active cell
+                if (e.key === 'Backspace' || e.key === 'Delete') {
+                    clearActiveCell();
+                    return;
+                }
+
+                // Printable characters (single char, no ctrl/meta/alt)
                 const isPrintable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
-                const isF2 = e.key === 'F2';
-                if (isPrintable || isF2) {
-                    startEditing(isPrintable ? e.key : undefined);
+                if (isPrintable) {
+                    applyCharToActiveCell(e.key);
                 }
             };
             window.addEventListener('keydown', onWindowKeyDown);
