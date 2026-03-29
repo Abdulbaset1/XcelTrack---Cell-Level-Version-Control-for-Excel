@@ -27,6 +27,55 @@ export const getWorkbooks = async (ownerId: string) => {
     return response.json();
 };
 
+export interface RegisteredUser {
+    firebase_uid: string;
+    email: string;
+    name: string;
+    role?: string;
+    created_at?: string;
+}
+
+export const getRegisteredUsers = async (): Promise<RegisteredUser[]> => {
+    const response = await fetch(`${API_URL}/users`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch users');
+    }
+    return response.json();
+};
+
+export const addWorkbookCollaborator = async (
+    workbookId: string | number,
+    ownerId: string,
+    collaboratorId: string
+) => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}/collaborators`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner_id: ownerId, collaborator_id: collaboratorId }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to add collaborator');
+    }
+
+    return response.json();
+};
+
+export const deleteWorkbook = async (workbookId: string | number, requesterId: string) => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}?requester_id=${requesterId}`, {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete workbook');
+    }
+
+    return response.json();
+};
+
 export const getWorkbookData = async (workbookId: string) => {
     const response = await fetch(`${API_URL}/workbooks/${workbookId}`);
     if (!response.ok) {
@@ -84,8 +133,17 @@ export interface CommitDetails {
     changes: CellChange[];
 }
 
+export interface CreateCommitResponse {
+    commit: Commit;
+    cells_snapshotted: number;
+}
+
 // Create a new commit (snapshot)
-export const createCommit = async (workbook_id: number, user_id: string, message?: string) => {
+export const createCommit = async (
+    workbook_id: number,
+    user_id: string,
+    message?: string
+): Promise<CreateCommitResponse> => {
     const response = await fetch(`${API_URL}/commits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

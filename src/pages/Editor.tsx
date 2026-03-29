@@ -16,7 +16,7 @@ import { Commit } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCommitSnapshot, createWorksheet, renameWorksheet, deleteWorksheet, reorderWorksheets } from '../services/api';
+import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCommitSnapshot, getCommitHistory, createWorksheet, renameWorksheet, deleteWorksheet, reorderWorksheets } from '../services/api';
 import HybridSyncBanner from '../components/HybridSyncBanner';
 import ConflictNotificationBanner from '../components/ConflictNotificationBanner';
 import ConflictResolutionViewer from '../components/ConflictResolutionViewer';
@@ -49,6 +49,8 @@ const Editor: React.FC = () => {
   const [isConflictViewerOpen, setIsConflictViewerOpen] = useState(false);
   const [selectedCommitDetails, setSelectedCommitDetails] = useState<any | null>(null);
   const [, setIsCommitDetailsLoading] = useState(false);
+  const [baseCommitId, setBaseCommitId] = useState<number | null>(null);
+  const [hasLocalEdits, setHasLocalEdits] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +63,15 @@ const Editor: React.FC = () => {
       const data = await getWorkbookData(id);
       console.log('Workbook loaded:', data);
       setWorkbookData(data);
+
+      try {
+        const history = await getCommitHistory(parseInt(id), 1, 0);
+        const latestCommit = history.commits?.[0];
+        setBaseCommitId(latestCommit ? latestCommit.id : null);
+      } catch (historyError) {
+        console.warn('Unable to fetch latest commit for base version check:', historyError);
+      }
+
       // Update worksheets state from loaded data if needed
       if (data.sheets) {
         const loadedSheets = Object.values(data.sheets).map((sheet: any) => ({
@@ -118,6 +129,8 @@ const Editor: React.FC = () => {
       console.warn('Conflict received via WebSocket:', data);
       setConflicts((prev) => [...prev, data]);
       setIsConflictViewerOpen(true);
+      // Mark sync status as error only when an actual conflict is reported
+      setSyncStatus('error');
       showToast('⚠️ A conflict was detected! Please resolve it.', 'warning');
     });
   }, [id, onConflict, showToast]);
@@ -137,13 +150,13 @@ const Editor: React.FC = () => {
       }
 
       setConflicts((prev) => prev.filter((c: any) => c.conflictId !== data.conflictId));
-      if (conflicts.length <= 1) setIsConflictViewerOpen(false);
       showToast('Conflict resolved by a collaborator', 'success');
     });
   }, [id, onConflictResolved, showToast, conflicts.length, activeWorksheetId]);
 
   const handleCellChange = React.useCallback((cell: any) => {
     console.log('Cell changed:', cell);
+    setHasLocalEdits(true);
 
     // Broadcast cell change to other users
     if (id && user) {
@@ -166,17 +179,48 @@ const Editor: React.FC = () => {
       return;
     }
 
+    if (conflicts.length > 0) {
+      setSyncStatus('error');
+      setIsConflictViewerOpen(true);
+      showToast('Resolve active conflicts before saving', 'warning');
+      return;
+    }
+
+    const workbookId = parseInt(id || '0');
+
+    try {
+      const latestHistory = await getCommitHistory(workbookId, 1, 0);
+      const latestCommit = latestHistory.commits?.[0];
+
+      if (
+        hasLocalEdits &&
+        baseCommitId !== null &&
+        latestCommit &&
+        latestCommit.id !== baseCommitId
+      ) {
+        setSyncStatus('error');
+        showToast('A newer version exists. Refresh or review history before saving.', 'warning');
+        return;
+      }
+    } catch (versionCheckError) {
+      console.warn('Could not verify latest commit before save:', versionCheckError);
+    }
+
     setSyncStatus('syncing');
     try {
       // Create a commit for this save
-      const commit = await createCommit(
-        parseInt(id || '0'),
+      const commitResponse = await createCommit(
+        workbookId,
         user.uid,
         'Manual save'
       );
 
+      const savedCommit = commitResponse.commit;
+
       setSyncStatus('synced');
-      showToast(`Saved! Commit: ${commit.hash.substring(0, 8)}`, 'success');
+      setBaseCommitId(savedCommit?.id ?? baseCommitId);
+      setHasLocalEdits(false);
+      showToast(`Saved! Commit: ${savedCommit.hash.substring(0, 8)}`, 'success');
       // Refresh history if sidebar is open
       if (showVersionHistory) {
         // This is a bit hacky, but history timeline refreshes on workbookId change or manual trigger
@@ -187,7 +231,7 @@ const Editor: React.FC = () => {
       setSyncStatus('error');
       showToast('Failed to save workbook', 'error');
     }
-  }, [id, user, showToast, showVersionHistory]);
+  }, [id, user, showToast, showVersionHistory, conflicts.length, hasLocalEdits, baseCommitId]);
 
   const handleCommitSelect = async (commit: Commit) => {
     setIsCommitDetailsLoading(true);
@@ -229,11 +273,17 @@ const Editor: React.FC = () => {
       });
     }
 
-    if (conflicts.length === 0) {
-      setIsConflictViewerOpen(false);
-    }
     showToast('Conflicts resolved successfully', 'success');
   };
+
+  // Whenever all conflicts are cleared (resolved or dismissed), return to
+  // a healthy sync state and close the conflict viewer/banner.
+  useEffect(() => {
+    if (conflicts.length === 0) {
+      setIsConflictViewerOpen(false);
+      setSyncStatus('synced');
+    }
+  }, [conflicts.length]);
 
   const handleCellSelect = React.useCallback((cell: any) => {
     const address = `${String.fromCharCode(65 + cell.col)}${cell.row + 1}`;
@@ -541,14 +591,7 @@ const Editor: React.FC = () => {
                       workbookData={workbookData}
                       onCellSelect={handleCellSelect}
                       onCellChange={handleCellChange}
-                      onSave={(data: any) => {
-                        console.log('Workbook saved:', data);
-                        if (id && user) {
-                          createCommit(parseInt(id), user.uid, 'Manual save')
-                            .then(() => showToast('Changes saved and committed', 'success'))
-                            .catch(() => showToast('Failed to save commit', 'error'));
-                        }
-                      }}
+                      onSave={handleSave}
                     />
 
                     {/* Collaborative Cursors Overlay - Placed exactly over the editor canvas */}
@@ -738,8 +781,9 @@ const Editor: React.FC = () => {
           changesCount={selectedCommitForRollback.changes_count || 0}
           onConfirm={() => {
             setIsRollbackModalOpen(false);
-            // Refresh workbook and history
-            window.location.reload();
+            setSelectedCommitDetails(null);
+            fetchWorkbook();
+            showToast('Workbook reverted to selected version', 'success');
           }}
           onCancel={() => setIsRollbackModalOpen(false)}
           onPreview={async (cid) => {
