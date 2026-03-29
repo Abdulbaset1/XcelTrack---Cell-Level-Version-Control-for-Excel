@@ -34,6 +34,19 @@ function getNextColor() {
     return color;
 }
 
+function toCellAddress(row, col) {
+    let colNumber = Number(col) + 1;
+    let colLetters = '';
+
+    while (colNumber > 0) {
+        const remainder = (colNumber - 1) % 26;
+        colLetters = String.fromCharCode(65 + remainder) + colLetters;
+        colNumber = Math.floor((colNumber - 1) / 26);
+    }
+
+    return `${colLetters}${Number(row) + 1}`;
+}
+
 // ─────────────────────────────────────────────
 // Helper: Serialize users set to array
 // ─────────────────────────────────────────────
@@ -184,6 +197,43 @@ function initWebSocket(io, pool) {
                     lastFormula: cellData.formula,
                 };
 
+                // Persist latest edited cell so future loads and commits reflect user activity
+                try {
+                    const worksheetId = Number(cellData.worksheetId);
+                    const row = Number(cellData.row);
+                    const col = Number(cellData.col);
+                    const address = toCellAddress(row, col);
+
+                    if (!Number.isNaN(worksheetId) && !Number.isNaN(row) && !Number.isNaN(col)) {
+                        await pool.query(
+                            `INSERT INTO cells (worksheet_id, row_idx, col_idx, address, value, formula, style)
+                             VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb))
+                             ON CONFLICT (worksheet_id, row_idx, col_idx)
+                             DO UPDATE SET value = EXCLUDED.value, formula = EXCLUDED.formula`,
+                            [
+                                worksheetId,
+                                row,
+                                col,
+                                address,
+                                cellData.value ?? null,
+                                cellData.formula ?? null,
+                                null,
+                            ]
+                        );
+
+                        await pool.query(
+                            'UPDATE workbooks SET updated_at = NOW() WHERE id = $1',
+                            [workbookId]
+                        );
+                    }
+                } catch (err) {
+                    logger.error('Failed to persist cell edit', {
+                        workbookId,
+                        cellAddress,
+                        error: err.message,
+                    });
+                }
+
                 // Broadcast to OTHER users only
                 socket.to(room).emit('cell-changed', {
                     socketId: socket.id,
@@ -198,10 +248,38 @@ function initWebSocket(io, pool) {
             const room = `workbook-${workbookId}`;
 
             try {
+                const worksheetId = Number(cellData?.worksheetId);
+                const row = Number(cellData?.row);
+                const col = Number(cellData?.col);
+
+                if (!Number.isNaN(worksheetId) && !Number.isNaN(row) && !Number.isNaN(col)) {
+                    const address = toCellAddress(row, col);
+                    await pool.query(
+                        `INSERT INTO cells (worksheet_id, row_idx, col_idx, address, value, formula, style)
+                         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb))
+                         ON CONFLICT (worksheet_id, row_idx, col_idx)
+                         DO UPDATE SET value = EXCLUDED.value`,
+                        [
+                            worksheetId,
+                            row,
+                            col,
+                            address,
+                            resolvedValue ?? null,
+                            cellData?.formula ?? null,
+                            null,
+                        ]
+                    );
+                }
+
                 await pool.query(
                     `UPDATE conflicts SET status = 'resolved', resolved_by = $1, resolved_at = NOW(), resolution = $2
                      WHERE id = $3`,
                     [resolvedBy, resolution, conflictId]
+                );
+
+                await pool.query(
+                    'UPDATE workbooks SET updated_at = NOW() WHERE id = $1',
+                    [workbookId]
                 );
 
                 // Notify all users in the workbook that the conflict is resolved

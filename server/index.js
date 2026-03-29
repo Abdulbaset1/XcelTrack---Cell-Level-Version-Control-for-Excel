@@ -156,6 +156,19 @@ const createTables = async () => {
         `);
         console.log('Worksheets table ready');
 
+        // Workbook Collaborators Table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS workbook_collaborators (
+                id SERIAL PRIMARY KEY,
+                workbook_id INT REFERENCES workbooks(id) ON DELETE CASCADE,
+                user_id VARCHAR(255) REFERENCES users(firebase_uid) ON DELETE CASCADE,
+                added_by VARCHAR(255),
+                added_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(workbook_id, user_id)
+            )
+        `);
+        console.log('Workbook collaborators table ready');
+
         // Conflicts Table
         await pool.query(`
             CREATE TABLE IF NOT EXISTS conflicts (
@@ -170,11 +183,17 @@ const createTables = async () => {
                 user2_value TEXT,
                 status VARCHAR(20) DEFAULT 'pending', -- pending, resolved
                 resolved_by VARCHAR(255),
+                resolution TEXT,
                 resolved_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         `);
         console.log('Conflicts table ready');
+
+        await pool.query(`
+            ALTER TABLE conflicts
+            ADD COLUMN IF NOT EXISTS resolution TEXT
+        `);
 
         // Cells Table (Latest State)
         await pool.query(`
@@ -251,6 +270,8 @@ const createTables = async () => {
         await pool.query(`
             CREATE INDEX IF NOT EXISTS idx_workbooks_owner_id ON workbooks(owner_id);
             CREATE INDEX IF NOT EXISTS idx_workbooks_updated_at ON workbooks(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_workbook_collaborators_workbook_id ON workbook_collaborators(workbook_id);
+            CREATE INDEX IF NOT EXISTS idx_workbook_collaborators_user_id ON workbook_collaborators(user_id);
             CREATE INDEX IF NOT EXISTS idx_worksheets_workbook_id ON worksheets(workbook_id);
             CREATE INDEX IF NOT EXISTS idx_cells_worksheet_id ON cells(worksheet_id);
             CREATE INDEX IF NOT EXISTS idx_cells_row_col ON cells(worksheet_id, row_idx, col_idx);
@@ -626,7 +647,29 @@ app.get('/api/workbooks', generalLimiter, async (req, res) => {
             return res.json(cachedWorkbooks);
         }
 
-        const result = await pool.query('SELECT * FROM workbooks WHERE owner_id = $1 ORDER BY updated_at DESC', [owner_id]);
+        const result = await pool.query(
+            `SELECT
+                w.*,
+                CASE WHEN w.owner_id = $1 THEN true ELSE false END as is_owner,
+                COALESCE(cstats.collaborator_count, 0) as collaborator_count,
+                owner_user.name as owner_name,
+                owner_user.email as owner_email
+             FROM workbooks w
+             LEFT JOIN users owner_user ON owner_user.firebase_uid = w.owner_id
+             LEFT JOIN (
+                SELECT workbook_id, COUNT(*)::int as collaborator_count
+                FROM workbook_collaborators
+                GROUP BY workbook_id
+             ) cstats ON cstats.workbook_id = w.id
+             WHERE w.owner_id = $1
+                OR w.id IN (
+                    SELECT workbook_id
+                    FROM workbook_collaborators
+                    WHERE user_id = $1
+                )
+             ORDER BY w.updated_at DESC`,
+            [owner_id]
+        );
 
         // Cache the result
         await cache.set(cacheKey, result.rows, 120); // 2 minutes TTL
@@ -668,6 +711,7 @@ app.get('/api/workbooks/:id', async (req, res) => {
 
                 cellData[cell.row_idx][cell.col_idx] = {
                     v: cell.value,
+                    f: cell.formula,
                     // Map styles back to Univer format if needed (simplified for now)
                 };
             });
@@ -696,6 +740,115 @@ app.get('/api/workbooks/:id', async (req, res) => {
     } catch (error) {
         console.error('Error fetching workbook details:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Add Workbook Collaborator
+app.post('/api/workbooks/:id/collaborators', async (req, res) => {
+    const { id } = req.params;
+    const { owner_id, collaborator_id } = req.body;
+
+    if (!owner_id || !collaborator_id) {
+        return res.status(400).json({ error: 'owner_id and collaborator_id are required' });
+    }
+
+    try {
+        const workbookResult = await pool.query(
+            'SELECT id, owner_id FROM workbooks WHERE id = $1',
+            [id]
+        );
+
+        if (workbookResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Workbook not found' });
+        }
+
+        if (workbookResult.rows[0].owner_id !== owner_id) {
+            return res.status(403).json({ error: 'Only the workbook owner can add collaborators' });
+        }
+
+        if (owner_id === collaborator_id) {
+            return res.status(400).json({ error: 'Owner is already a collaborator by default' });
+        }
+
+        const userResult = await pool.query(
+            'SELECT firebase_uid, name, email FROM users WHERE firebase_uid = $1',
+            [collaborator_id]
+        );
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Collaborator user not found' });
+        }
+
+        const insertResult = await pool.query(
+            `INSERT INTO workbook_collaborators (workbook_id, user_id, added_by)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (workbook_id, user_id) DO NOTHING
+             RETURNING *`,
+            [id, collaborator_id, owner_id]
+        );
+
+        await cache.del(cache.userWorkbooksKey(owner_id));
+        await cache.del(cache.userWorkbooksKey(collaborator_id));
+
+        if (insertResult.rows.length === 0) {
+            return res.json({ message: 'User is already a collaborator', collaborator: userResult.rows[0] });
+        }
+
+        res.status(201).json({
+            message: 'Collaborator added successfully',
+            collaborator: userResult.rows[0],
+        });
+    } catch (error) {
+        logger.error('Error adding workbook collaborator', {
+            error: error.message,
+            workbookId: id,
+            owner_id,
+            collaborator_id,
+        });
+        res.status(500).json({ error: 'Failed to add collaborator' });
+    }
+});
+
+// Delete Workbook (Owner only)
+app.delete('/api/workbooks/:id', async (req, res) => {
+    const { id } = req.params;
+    const requesterId = req.query.requester_id || req.body?.requester_id;
+
+    if (!requesterId) {
+        return res.status(400).json({ error: 'requester_id is required' });
+    }
+
+    try {
+        const workbookResult = await pool.query(
+            'SELECT id, owner_id, name FROM workbooks WHERE id = $1',
+            [id]
+        );
+
+        if (workbookResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Workbook not found' });
+        }
+
+        const workbook = workbookResult.rows[0];
+        if (workbook.owner_id !== requesterId) {
+            return res.status(403).json({ error: 'Only the owner can delete this workbook' });
+        }
+
+        const collaboratorRows = await pool.query(
+            'SELECT user_id FROM workbook_collaborators WHERE workbook_id = $1',
+            [id]
+        );
+
+        await pool.query('DELETE FROM workbooks WHERE id = $1', [id]);
+
+        await cache.del(cache.userWorkbooksKey(requesterId));
+        for (const row of collaboratorRows.rows) {
+            await cache.del(cache.userWorkbooksKey(row.user_id));
+        }
+
+        res.json({ message: 'Workbook deleted successfully', workbook_id: id, name: workbook.name });
+    } catch (error) {
+        logger.error('Error deleting workbook', { error: error.message, workbookId: id, requesterId });
+        res.status(500).json({ error: 'Failed to delete workbook' });
     }
 });
 
@@ -1514,6 +1667,7 @@ app.get('/api/commits/:id/snapshot', async (req, res) => {
                 if (!cellData[cell.row_idx]) cellData[cell.row_idx] = {};
                 cellData[cell.row_idx][cell.col_idx] = {
                     v: cell.value,
+                    f: cell.formula,
                     // styles mapping could go here
                 };
             });
