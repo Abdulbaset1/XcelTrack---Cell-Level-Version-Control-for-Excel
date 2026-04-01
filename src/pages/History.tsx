@@ -18,7 +18,7 @@ const History: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await getUserCommits(user.uid);
+        const data = await getUserCommits(user.uid, user.uid);
         setCommits(data.commits);
       } catch (err) {
         console.error('Error fetching global history:', err);

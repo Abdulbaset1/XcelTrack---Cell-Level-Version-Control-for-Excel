@@ -1,5 +1,9 @@
 const admin = require('firebase-admin');
 require('dotenv').config();
+const isTestEnv = process.env.NODE_ENV === 'test';
+const logInfo = (...args) => { if (!isTestEnv) console.log(...args); };
+const logWarn = (...args) => { if (!isTestEnv) console.warn(...args); };
+const logError = (...args) => { if (!isTestEnv) console.error(...args); };
 
 // Initialize Firebase Admin SDK
 // Ideally, we'd use a service account key file.
@@ -22,38 +26,38 @@ try {
         admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
         });
-        console.log("Firebase Admin initialized with SERVICE_ACCOUNT env var.");
+        logInfo("Firebase Admin initialized with SERVICE_ACCOUNT env var.");
     }
     // 2. Check for serviceAccountKey.json file in the same directory
     else {
         const path = require('path');
         const fs = require('fs');
         const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
-        console.log("Checking for Service Account at:", serviceAccountPath);
+        logInfo("Checking for Service Account at:", serviceAccountPath);
 
         if (fs.existsSync(serviceAccountPath)) {
-            console.log("Found serviceAccountKey.json");
+            logInfo("Found serviceAccountKey.json");
             try {
                 const serviceAccount = require(serviceAccountPath);
                 admin.initializeApp({
                     credential: admin.credential.cert(serviceAccount)
                 });
-                console.log("Firebase Admin initialized with serviceAccountKey.json file.");
+                logInfo("Firebase Admin initialized with serviceAccountKey.json file.");
             } catch (err) {
-                console.error("Error loading serviceAccountKey.json:", err);
+                logError("Error loading serviceAccountKey.json:", err);
                 // Fallback catch to not crash entirely, but init will fail
                 throw err;
             }
         } else {
             // 3. Last resort: Default credentials (fails locally usually)
-            console.warn("WARNING: No 'serviceAccountKey.json' found in server/ directory and no FIREBASE_SERVICE_ACCOUNT env var set.");
-            console.warn("Admin SDK functionality (create/update user) will likely FAIL.");
+            logWarn("WARNING: No 'serviceAccountKey.json' found in server/ directory and no FIREBASE_SERVICE_ACCOUNT env var set.");
+            logWarn("Admin SDK functionality (create/update user) will likely FAIL.");
             admin.initializeApp();
-            console.log("Firebase Admin initialized with default credentials (ADC).");
+            logInfo("Firebase Admin initialized with default credentials (ADC).");
         }
     }
 } catch (error) {
-    console.error("Firebase Admin initialization failed:", error);
+    logError("Firebase Admin initialization failed:", error);
 }
 
 module.exports = admin;

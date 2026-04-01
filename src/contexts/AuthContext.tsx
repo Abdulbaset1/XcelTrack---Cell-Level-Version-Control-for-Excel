@@ -46,10 +46,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const getDisplayNameFallback = (displayName: string | null, email: string | null) => {
+    if (displayName && displayName.trim().length > 0) return displayName;
+    if (email && email.includes('@')) return email.split('@')[0];
+    return 'User';
+  };
+
   // Helper to sync user with backend
   const syncUserWithBackend = async (user: User, name: string) => {
+    if (!user.uid || !user.email) {
+      console.warn('Skipping backend sync: missing uid/email', { uid: user.uid, email: user.email });
+      return false;
+    }
+
     try {
-      await fetch('http://localhost:5000/api/sync-user', {
+      const response = await fetch('http://localhost:5000/api/sync-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -58,14 +69,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: name,
         }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Backend user sync failed:', errorData.error || response.statusText);
+        return false;
+      }
+
+      return true;
     } catch (error) {
       console.error('Failed to sync user with backend:', error);
+      return false;
     }
   };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        const fallbackName = getDisplayNameFallback(firebaseUser.displayName, firebaseUser.email);
+
         // Map FirebaseUser to our User interface
         let userData: User = {
           uid: firebaseUser.uid,
@@ -73,9 +95,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           displayName: firebaseUser.displayName,
           photoURL: firebaseUser.photoURL,
           emailVerified: firebaseUser.emailVerified,
-          name: firebaseUser.displayName || '', // Map name
+          name: fallbackName,
           createdAt: firebaseUser.metadata.creationTime,
         };
+
+        await syncUserWithBackend(
+          {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+            photoURL: firebaseUser.photoURL,
+            emailVerified: firebaseUser.emailVerified,
+            name: fallbackName,
+          },
+          fallbackName
+        );
 
         // Fetch role from PostgreSQL backend (source of truth)
         try {
@@ -116,6 +150,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string): Promise<User | null> => {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const firebaseUser = userCredential.user;
+    const fallbackName = getDisplayNameFallback(firebaseUser.displayName, firebaseUser.email);
+
+    await syncUserWithBackend(
+      {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        displayName: firebaseUser.displayName,
+        photoURL: firebaseUser.photoURL,
+        emailVerified: firebaseUser.emailVerified,
+        name: fallbackName,
+      },
+      fallbackName
+    );
 
     // Fetch role explicitly to ensure redirect logic works
     let role = 'User'; // Default
@@ -139,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid: firebaseUser.uid,
       email: firebaseUser.email,
       displayName: firebaseUser.displayName,
-      name: firebaseUser.displayName || '',
+      name: fallbackName,
       photoURL: firebaseUser.photoURL,
       emailVerified: firebaseUser.emailVerified,
       createdAt: firebaseUser.metadata.creationTime,
@@ -184,6 +231,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithGoogle = async (): Promise<User | null> => {
     const result = await signInWithPopup(auth, googleProvider);
     const user = result.user;
+    const fallbackName = getDisplayNameFallback(user.displayName, user.email);
+
+    await syncUserWithBackend({
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
+      emailVerified: user.emailVerified,
+      name: fallbackName
+    }, fallbackName);
 
     // Ensure doc exists
     const userDocRef = doc(db, 'users', user.uid);
@@ -199,14 +256,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authProvider: 'google',
         createdAt: new Date().toISOString()
       });
-      await syncUserWithBackend({
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        emailVerified: user.emailVerified,
-        name: user.displayName || 'User'
-      }, user.displayName || 'User');
     } else {
       // Fetch existing role if not new
       try {
@@ -224,7 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid: user.uid,
       email: user.email,
       displayName: user.displayName,
-      name: user.displayName || '',
+      name: fallbackName,
       photoURL: user.photoURL,
       emailVerified: user.emailVerified,
       createdAt: user.metadata.creationTime,
@@ -235,6 +284,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithGithub = async (): Promise<User | null> => {
     const result = await signInWithPopup(auth, githubProvider);
     const user = result.user;
+    const fallbackName = getDisplayNameFallback(user.displayName, user.email);
+
+    await syncUserWithBackend({
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
+      emailVerified: user.emailVerified,
+      name: fallbackName
+    }, fallbackName);
+
     // Ensure doc exists
     const userDocRef = doc(db, 'users', user.uid);
     const userDoc = await getDoc(userDocRef);
@@ -249,14 +309,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authProvider: 'github',
         createdAt: new Date().toISOString()
       });
-      await syncUserWithBackend({
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        emailVerified: user.emailVerified,
-        name: user.displayName || 'User'
-      }, user.displayName || 'User');
     } else {
       // Fetch existing role if not new
       try {
@@ -274,7 +326,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid: user.uid,
       email: user.email,
       displayName: user.displayName,
-      name: user.displayName || '',
+      name: fallbackName,
       photoURL: user.photoURL,
       emailVerified: user.emailVerified,
       createdAt: user.metadata.creationTime,

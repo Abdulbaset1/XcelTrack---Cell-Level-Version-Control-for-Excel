@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getRecentActivity, RecentActivityCommit } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const CommitPage: React.FC = () => {
+    const { user } = useAuth();
     const [commits, setCommits] = useState<RecentActivityCommit[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fetchCommits = useCallback(async () => {
+        if (!user?.uid) return;
         try {
-            const data = await getRecentActivity(50);
+            const data = await getRecentActivity(user.uid, 50);
             setCommits(data.commits);
             setError(null);
         } catch (err: any) {
@@ -16,7 +19,7 @@ const CommitPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user?.uid]);
 
     useEffect(() => {
         fetchCommits();

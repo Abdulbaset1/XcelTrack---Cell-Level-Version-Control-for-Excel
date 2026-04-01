@@ -1,6 +1,7 @@
 const winston = require('winston');
 require('winston-daily-rotate-file');
 const path = require('path');
+const isTestEnv = process.env.NODE_ENV === 'test';
 
 // Define log format
 const logFormat = winston.format.combine(
@@ -45,25 +46,32 @@ const combinedFileRotateTransport = new winston.transports.DailyRotateFile({
 // Create logger instance
 const logger = winston.createLogger({
     level: process.env.LOG_LEVEL || 'info',
+    silent: isTestEnv,
     format: logFormat,
-    transports: [
-        errorFileRotateTransport,
-        combinedFileRotateTransport,
-    ],
-    exceptionHandlers: [
-        new winston.transports.File({
-            filename: path.join(__dirname, 'logs', 'exceptions.log'),
-        }),
-    ],
-    rejectionHandlers: [
-        new winston.transports.File({
-            filename: path.join(__dirname, 'logs', 'rejections.log'),
-        }),
-    ],
+    transports: isTestEnv
+        ? []
+        : [
+            errorFileRotateTransport,
+            combinedFileRotateTransport,
+        ],
+    exceptionHandlers: isTestEnv
+        ? []
+        : [
+            new winston.transports.File({
+                filename: path.join(__dirname, 'logs', 'exceptions.log'),
+            }),
+        ],
+    rejectionHandlers: isTestEnv
+        ? []
+        : [
+            new winston.transports.File({
+                filename: path.join(__dirname, 'logs', 'rejections.log'),
+            }),
+        ],
 });
 
 // Add console transport in development
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && !isTestEnv) {
     logger.add(
         new winston.transports.Console({
             format: consoleFormat,

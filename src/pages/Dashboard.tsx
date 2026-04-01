@@ -9,8 +9,11 @@ import {
   getUserCommits,
   getRegisteredUsers,
   addWorkbookCollaborator,
+  getWorkbookCollaborators,
+  removeWorkbookCollaborator,
   deleteWorkbook,
   RegisteredUser,
+  WorkbookCollaborator,
 } from '../services/api';
 import FileUploadModal from '../components/FileUploadModal';
 import SkeletonLoader from '../components/SkeletonLoader';
@@ -27,8 +30,11 @@ const Dashboard: React.FC = () => {
   const [selectedFileForMenu, setSelectedFileForMenu] = useState<any | null>(null);
   const [selectedFileForShare, setSelectedFileForShare] = useState<any | null>(null);
   const [registeredUsers, setRegisteredUsers] = useState<RegisteredUser[]>([]);
+  const [existingCollaborators, setExistingCollaborators] = useState<WorkbookCollaborator[]>([]);
   const [collaboratorQuery, setCollaboratorQuery] = useState('');
   const [isAddingCollaborator, setIsAddingCollaborator] = useState(false);
+  const [isLoadingCollaborators, setIsLoadingCollaborators] = useState(false);
+  const [removingCollaboratorId, setRemovingCollaboratorId] = useState<string | null>(null);
   const [isDeletingFileId, setIsDeletingFileId] = useState<number | null>(null);
 
   const fetchFiles = React.useCallback(async () => {
@@ -50,7 +56,7 @@ const Dashboard: React.FC = () => {
   const fetchRecentActivity = React.useCallback(async () => {
     if (!user) return;
     try {
-      const response = await getUserCommits(user.uid, 5, 0);
+      const response = await getUserCommits(user.uid, user.uid, 5, 0);
       setRecentActivity(response.commits || []);
     } catch (activityError) {
       console.warn('Failed to fetch recent activity:', activityError);
@@ -58,14 +64,29 @@ const Dashboard: React.FC = () => {
   }, [user]);
 
   const fetchRegisteredUsers = React.useCallback(async () => {
+    if (!user) return;
     try {
-      const users = await getRegisteredUsers();
+      const users = await getRegisteredUsers(user.uid);
       setRegisteredUsers(users);
     } catch (usersError: any) {
       console.warn('Failed to fetch users for collaboration:', usersError);
       showToast(usersError.message || 'Failed to load users', 'error');
     }
-  }, [showToast]);
+  }, [showToast, user]);
+
+  const fetchWorkbookCollaborators = React.useCallback(async (workbookId: number) => {
+    if (!user) return;
+    try {
+      setIsLoadingCollaborators(true);
+      const response = await getWorkbookCollaborators(workbookId, user.uid);
+      setExistingCollaborators(response.collaborators || []);
+    } catch (collaboratorsError: any) {
+      console.warn('Failed to fetch workbook collaborators:', collaboratorsError);
+      showToast(collaboratorsError.message || 'Failed to load collaborators', 'error');
+    } finally {
+      setIsLoadingCollaborators(false);
+    }
+  }, [showToast, user]);
 
   useEffect(() => {
     fetchFiles();
@@ -82,10 +103,13 @@ const Dashboard: React.FC = () => {
   }, [fetchFiles, fetchRecentActivity]);
 
   useEffect(() => {
-    if (selectedFileForShare && registeredUsers.length === 0) {
-      fetchRegisteredUsers();
+    if (selectedFileForShare) {
+      if (registeredUsers.length === 0) {
+        fetchRegisteredUsers();
+      }
+      fetchWorkbookCollaborators(selectedFileForShare.id);
     }
-  }, [selectedFileForShare, registeredUsers.length, fetchRegisteredUsers]);
+  }, [selectedFileForShare, registeredUsers.length, fetchRegisteredUsers, fetchWorkbookCollaborators]);
 
   const quickStats = {
     totalFiles: files.length,
@@ -113,7 +137,8 @@ const Dashboard: React.FC = () => {
     e.stopPropagation();
     try {
       showToast(`Preparing download for ${fileName}...`, 'info');
-      await downloadWorkbook(fileId, fileName);
+      if (!user) return;
+      await downloadWorkbook(fileId, fileName, user.uid);
       showToast('Download started successfully', 'success');
     } catch (err) {
       console.error('Download failed:', err);
@@ -164,6 +189,7 @@ const Dashboard: React.FC = () => {
     if (registeredUsers.length === 0) {
       await fetchRegisteredUsers();
     }
+    await fetchWorkbookCollaborators(file.id);
   };
 
   const handleAddCollaborator = async (collaboratorId: string) => {
@@ -173,14 +199,31 @@ const Dashboard: React.FC = () => {
       setIsAddingCollaborator(true);
       await addWorkbookCollaborator(selectedFileForShare.id, user.uid, collaboratorId);
       showToast('Collaborator added successfully', 'success');
-      setSelectedFileForShare(null);
       setCollaboratorQuery('');
       await fetchFiles();
+      await fetchWorkbookCollaborators(selectedFileForShare.id);
     } catch (addError: any) {
       console.error('Add collaborator failed:', addError);
       showToast(addError.message || 'Failed to add collaborator', 'error');
     } finally {
       setIsAddingCollaborator(false);
+    }
+  };
+
+  const handleRemoveCollaborator = async (collaboratorId: string) => {
+    if (!selectedFileForShare || !user) return;
+
+    try {
+      setRemovingCollaboratorId(collaboratorId);
+      await removeWorkbookCollaborator(selectedFileForShare.id, user.uid, collaboratorId);
+      showToast('Collaborator removed successfully', 'success');
+      await fetchFiles();
+      await fetchWorkbookCollaborators(selectedFileForShare.id);
+    } catch (removeError: any) {
+      console.error('Remove collaborator failed:', removeError);
+      showToast(removeError.message || 'Failed to remove collaborator', 'error');
+    } finally {
+      setRemovingCollaboratorId(null);
     }
   };
 
@@ -549,6 +592,33 @@ const Dashboard: React.FC = () => {
               ) : (
                 <div className="px-3 py-4 text-sm text-[#535F80]">No matching user found.</div>
               )}
+            </div>
+
+            <div className="mt-4">
+              <p className="text-sm font-semibold text-[#051747] mb-2">Current Collaborators</p>
+              <div className="max-h-44 overflow-y-auto border border-gray-200 rounded-lg">
+                {isLoadingCollaborators ? (
+                  <div className="px-3 py-3 text-sm text-[#535F80]">Loading collaborators...</div>
+                ) : existingCollaborators.length === 0 ? (
+                  <div className="px-3 py-3 text-sm text-[#535F80]">No collaborators added yet.</div>
+                ) : (
+                  existingCollaborators.map((collaborator) => (
+                    <div key={collaborator.user_id} className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-[#051747]">{collaborator.name || 'Unnamed User'}</p>
+                        <p className="text-xs text-[#535F80]">{collaborator.email}</p>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveCollaborator(collaborator.user_id)}
+                        disabled={removingCollaboratorId === collaborator.user_id}
+                        className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {removingCollaboratorId === collaborator.user_id ? 'Removing...' : 'Remove'}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

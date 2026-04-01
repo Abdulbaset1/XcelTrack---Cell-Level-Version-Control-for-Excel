@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaSearch, FaDownload, FaFileExport, FaListAlt, FaTimes, FaShieldAlt, FaCheckCircle, FaExclamationTriangle, FaChartBar } from 'react-icons/fa';
+import { useAuth } from '../contexts/AuthContext';
+import { getAuditLogs, getAuditLogsExportUrl } from '../services/api';
 
 // file: component for FR9.2 and FR9.5
 
@@ -28,11 +30,15 @@ interface ComplianceReport {
 }
 
 const AuditLogsPage: React.FC = () => {
+    const { user } = useAuth();
     const [logs, setLogs] = useState<AuditLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState('all');
+    const [actionFilter, setActionFilter] = useState('');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState('');
     const [isComplianceModalOpen, setIsComplianceModalOpen] = useState(false);
     const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
     const [isExporting, setIsExporting] = useState(false);
@@ -40,11 +46,15 @@ const AuditLogsPage: React.FC = () => {
     const API_BASE_URL = 'http://localhost:5000/api';
 
     const fetchLogs = useCallback(async () => {
+        if (!user?.uid) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/admin/audit-logs?limit=100`);
-            if (!response.ok) throw new Error('Failed to fetch logs');
-            const data = await response.json();
+            const data = await getAuditLogs(user.uid, 100, 0, {
+                action: actionFilter || undefined,
+                user: searchTerm || undefined,
+                from: fromDate ? `${fromDate}T00:00:00` : undefined,
+                to: toDate ? `${toDate}T23:59:59` : undefined,
+            });
             // Map backend fields to frontend interface if necessary
             const mappedLogs = data.logs.map((log: any) => ({
                 ...log,
@@ -61,7 +71,7 @@ const AuditLogsPage: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [user?.uid, actionFilter, searchTerm, fromDate, toDate]);
 
     useEffect(() => {
         fetchLogs();
@@ -91,9 +101,15 @@ const AuditLogsPage: React.FC = () => {
     };
 
     const handleExport = async () => {
+        if (!user?.uid) return;
         setIsExporting(true);
         try {
-            window.location.href = `${API_BASE_URL}/admin/audit-logs/export`;
+            window.location.href = getAuditLogsExportUrl(user.uid, 'csv', {
+                action: actionFilter || undefined,
+                user: searchTerm || undefined,
+                from: fromDate ? `${fromDate}T00:00:00` : undefined,
+                to: toDate ? `${toDate}T23:59:59` : undefined,
+            });
         } catch (err) {
             console.error('Export failed:', err);
             alert('Failed to export logs. Please try again.');
@@ -103,9 +119,10 @@ const AuditLogsPage: React.FC = () => {
     };
 
     const handleComplianceReport = async () => {
+        if (!user?.uid) return;
         setIsLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/admin/compliance-report`);
+            const response = await fetch(`${API_BASE_URL}/admin/compliance-report?requester_id=${user.uid}`);
             if (!response.ok) throw new Error('Failed to fetch compliance report');
             const data = await response.json();
             setComplianceReport(data);
@@ -208,32 +225,84 @@ const AuditLogsPage: React.FC = () => {
                             <option value="failure">Failure</option>
                             <option value="warning">Warning</option>
                         </select>
+                        <input
+                            type="text"
+                            value={actionFilter}
+                            onChange={(e) => setActionFilter(e.target.value)}
+                            placeholder="Filter action (e.g. USER_*)"
+                            className="glass-input"
+                            style={{ flex: 1, minWidth: '0' }}
+                        />
+                        <input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => setFromDate(e.target.value)}
+                            className="glass-input"
+                            style={{ flex: 1, minWidth: '0' }}
+                        />
+                        <input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => setToDate(e.target.value)}
+                            className="glass-input"
+                            style={{ flex: 1, minWidth: '0' }}
+                        />
                     </div>
 
-                    <button
-                        onClick={handleExport}
-                        className="neu-button"
-                        disabled={isExporting}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '0.6rem 1.2rem',
-                            borderRadius: '8px',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid rgba(255, 255, 255, 0.1)',
-                            color: 'var(--text-primary)',
-                            cursor: isExporting ? 'not-allowed' : 'pointer',
-                            fontSize: '0.9rem',
-                            fontWeight: 500,
-                            transition: 'all 0.2s ease',
-                            backdropFilter: 'blur(10px)',
-                            opacity: isExporting ? 0.7 : 1
-                        }}
-                    >
-                        {/* @ts-ignore */}
-                        <FaDownload /> {isExporting ? 'Exporting...' : 'Export Logs'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                            onClick={handleExport}
+                            className="neu-button"
+                            disabled={isExporting}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.6rem 1.2rem',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                color: 'var(--text-primary)',
+                                cursor: isExporting ? 'not-allowed' : 'pointer',
+                                fontSize: '0.9rem',
+                                fontWeight: 500,
+                                transition: 'all 0.2s ease',
+                                backdropFilter: 'blur(10px)',
+                                opacity: isExporting ? 0.7 : 1
+                            }}
+                        >
+                            {/* @ts-ignore */}
+                            <FaDownload /> {isExporting ? 'Exporting...' : 'Export CSV'}
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (!user?.uid) return;
+                                window.location.href = getAuditLogsExportUrl(user.uid, 'json', {
+                                    action: actionFilter || undefined,
+                                    user: searchTerm || undefined,
+                                    from: fromDate ? `${fromDate}T00:00:00` : undefined,
+                                    to: toDate ? `${toDate}T23:59:59` : undefined,
+                                });
+                            }}
+                            className="neu-button"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                padding: '0.6rem 1.2rem',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.9rem',
+                                fontWeight: 500,
+                                transition: 'all 0.2s ease',
+                                backdropFilter: 'blur(10px)'
+                            }}
+                        >
+                            Export JSON
+                        </button>
+                    </div>
                 </div>
 
                 {/* Logs Table */}

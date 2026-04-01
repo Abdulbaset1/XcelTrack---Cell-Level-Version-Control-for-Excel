@@ -25,6 +25,7 @@ interface CellEdit {
         value: string;
         formula?: string;
         worksheetId: string;
+        cellVersion?: number;
     };
 }
 
@@ -35,7 +36,24 @@ export interface CellConflict {
     user: CollaborativeUser | null;
     conflictingUser: CollaborativeUser | null;
     conflictingValue: string; // The value that caused the conflict
+    serverVersion?: number;
     serverDetected: boolean;
+}
+
+export interface CellEditRejection {
+    conflictId: number;
+    cellAddress: string;
+    reason: string;
+    serverValue: string;
+    serverFormula: string;
+    serverVersion: number;
+    cellData: any;
+}
+
+export interface CellEditAcceptance {
+    cellAddress: string;
+    cellVersion: number;
+    cellData: any;
 }
 
 interface TypingEvent {
@@ -59,6 +77,8 @@ interface WebSocketContextType {
     onCellChange: (callback: (data: CellEdit) => void) => void;
     onConflict: (callback: (data: CellConflict) => void) => void;
     onConflictResolved: (callback: (data: any) => void) => void;
+    onCellEditRejected: (callback: (data: CellEditRejection) => void) => void;
+    onCellEditAccepted: (callback: (data: CellEditAcceptance) => void) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -89,6 +109,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     const cellChangeCallbackRef = useRef<((data: CellEdit) => void) | null>(null);
     const conflictCallbackRef = useRef<((data: CellConflict) => void) | null>(null);
     const conflictResolvedCallbackRef = useRef<((data: any) => void) | null>(null);
+    const cellEditRejectedCallbackRef = useRef<((data: CellEditRejection) => void) | null>(null);
+    const cellEditAcceptedCallbackRef = useRef<((data: CellEditAcceptance) => void) | null>(null);
 
     useEffect(() => {
         const newSocket = io(serverUrl);
@@ -173,6 +195,21 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
             }
         });
 
+        // ── Edit Rejection (conflict blocked the edit) ─────────────────────
+        newSocket.on('cell-edit-rejected', (data: CellEditRejection) => {
+            console.warn('Cell edit rejected due to conflict:', data);
+            if (cellEditRejectedCallbackRef.current) {
+                cellEditRejectedCallbackRef.current(data);
+            }
+        });
+
+        // ── Edit Accepted (cell version updated) ───────────────────────────
+        newSocket.on('cell-edit-accepted', (data: CellEditAcceptance) => {
+            if (cellEditAcceptedCallbackRef.current) {
+                cellEditAcceptedCallbackRef.current(data);
+            }
+        });
+
         setSocket(newSocket);
 
         return () => {
@@ -222,6 +259,14 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         conflictResolvedCallbackRef.current = callback;
     }, []);
 
+    const onCellEditRejected = useCallback((callback: (data: CellEditRejection) => void) => {
+        cellEditRejectedCallbackRef.current = callback;
+    }, []);
+
+    const onCellEditAccepted = useCallback((callback: (data: CellEditAcceptance) => void) => {
+        cellEditAcceptedCallbackRef.current = callback;
+    }, []);
+
     return (
         <WebSocketContext.Provider
             value={{
@@ -240,6 +285,8 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
                 onCellChange,
                 onConflict,
                 onConflictResolved,
+                onCellEditRejected,
+                onCellEditAccepted,
             }}
         >
             {children}

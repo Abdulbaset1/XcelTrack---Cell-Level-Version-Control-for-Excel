@@ -44,8 +44,24 @@ const WorksheetTabs: React.FC<WorksheetTabsProps> = ({
     };
 
     const handleRenameSubmit = (worksheetId: string) => {
-        if (editingName.trim() && editingName !== worksheets.find(w => w.id === worksheetId)?.name) {
-            onWorksheetRename?.(worksheetId, editingName.trim());
+        const nextName = editingName.trim();
+        const currentName = worksheets.find(w => w.id === worksheetId)?.name || '';
+        const nameExists = worksheets.some(
+            (worksheet) => worksheet.id !== worksheetId && worksheet.name.toLowerCase() === nextName.toLowerCase()
+        );
+
+        if (!nextName) {
+            alert('Worksheet name cannot be empty.');
+            return;
+        }
+
+        if (nameExists) {
+            alert('Worksheet name must be unique.');
+            return;
+        }
+
+        if (nextName !== currentName) {
+            onWorksheetRename?.(worksheetId, nextName);
         }
         setEditingId(null);
         setEditingName('');
@@ -202,7 +218,11 @@ const WorksheetTabs: React.FC<WorksheetTabsProps> = ({
                                             e.stopPropagation();
                                             handleDelete(worksheet.id);
                                         }}
-                                        className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors last:rounded-b-lg"
+                                        disabled={worksheets.length <= 1}
+                                        className={`w-full flex items-center space-x-2 px-3 py-2 text-sm transition-colors last:rounded-b-lg ${worksheets.length <= 1
+                                            ? 'text-gray-400 cursor-not-allowed bg-gray-50'
+                                            : 'text-red-600 hover:bg-red-50'
+                                            }`}
                                     >
                                         {(FiTrash2 as any)({ size: 14 })}
                                         <span>Delete</span>

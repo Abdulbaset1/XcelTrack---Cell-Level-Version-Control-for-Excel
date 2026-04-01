@@ -4,7 +4,8 @@
     "description": "Backend synchronization server for XcelTrack",
     "main": "index.js",
     "scripts": {
-        "start": "node index.js"
+        "start": "node index.js",
+        "test": "jest --runInBand"
     },
     "dependencies": {
         "cors": "^2.8.5",

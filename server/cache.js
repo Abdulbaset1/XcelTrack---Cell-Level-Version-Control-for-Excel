@@ -4,6 +4,7 @@ const Redis = require('ioredis');
 let redis = null;
 let redisAvailable = false;
 
+if (process.env.NODE_ENV !== 'test') {
 try {
     redis = new Redis({
         host: process.env.REDIS_HOST || 'localhost',
@@ -51,6 +52,7 @@ try {
 } catch (error) {
     console.warn('Redis initialization failed. Server will run without caching:', error.message);
     redisAvailable = false;
+}
 }
 
 // Cache utility functions

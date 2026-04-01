@@ -4,11 +4,13 @@ import { getCommitHistory, Commit } from '../services/api';
 
 interface VersionHistoryTimelineProps {
     workbookId: number;
+    requesterId: string;
     onCommitSelect?: (commit: Commit) => void;
 }
 
 const VersionHistoryTimeline: React.FC<VersionHistoryTimelineProps> = ({
     workbookId,
+    requesterId,
     onCommitSelect,
 }) => {
     const [commits, setCommits] = useState<Commit[]>([]);
@@ -21,7 +23,7 @@ const VersionHistoryTimeline: React.FC<VersionHistoryTimelineProps> = ({
             try {
                 setLoading(true);
                 setError(null);
-                const data = await getCommitHistory(workbookId);
+                const data = await getCommitHistory(workbookId, requesterId);
                 setCommits(data.commits);
             } catch (err) {
                 console.error('Error fetching commits:', err);
@@ -31,10 +33,10 @@ const VersionHistoryTimeline: React.FC<VersionHistoryTimelineProps> = ({
             }
         };
 
-        if (workbookId) {
+        if (workbookId && requesterId) {
             fetchCommits();
         }
-    }, [workbookId]);
+    }, [workbookId, requesterId]);
 
     const handleCommitClick = (commit: Commit) => {
         setSelectedCommitId(commit.id);

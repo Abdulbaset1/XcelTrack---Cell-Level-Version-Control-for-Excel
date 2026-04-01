@@ -36,7 +36,7 @@ export interface ExcelEditorRef {
     setZoom: (zoom: number) => void;
     setValue: (value: string) => void;
     getSelection: () => any;
-    updateCell: (row: number, col: number, value: any, formula?: string) => void;
+    updateCell: (row: number, col: number, value: any, formula?: string, worksheetId?: string, silent?: boolean) => void;
 }
 
 interface ExcelEditorProps {
@@ -64,6 +64,7 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
     const onCellChangeRef = useRef(onCellChange);
     const onCellSelectRef = useRef(onCellSelect);
     const onSaveRef = useRef(onSave);
+    const suppressCellChangeRef = useRef(false);
 
     useEffect(() => {
         onCellChangeRef.current = onCellChange;
@@ -198,6 +199,7 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
             const commandEventName = fUniver.Event?.CommandExecuted || 'CommandExecuted';
             const commandSub = fUniver.addEvent(commandEventName, (command: any) => {
                 try {
+                    if (suppressCellChangeRef.current) return;
                     if (command.id !== 'sheet.command.set-range-values' || !onCellChangeRef.current) return;
 
                     const params = command.params;
@@ -446,12 +448,38 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
             }
             return null;
         },
-        updateCell: (row: number, col: number, value: any, formula?: string) => {
+        updateCell: (row: number, col: number, value: any, formula?: string, worksheetId?: string, silent: boolean = false) => {
             const wb = fUniverRef.current?.getActiveWorkbook();
-            const sh = wb?.getActiveSheet();
+            if (!wb) return;
+
+            let sh: any = wb?.getActiveSheet();
+
+            if (worksheetId) {
+                const workbookAsAny = wb as any;
+
+                if (typeof workbookAsAny.getSheetBySheetId === 'function') {
+                    sh = workbookAsAny.getSheetBySheetId(worksheetId) || sh;
+                } else if (typeof workbookAsAny.getSheetById === 'function') {
+                    sh = workbookAsAny.getSheetById(worksheetId) || sh;
+                } else if (typeof workbookAsAny.getSheets === 'function') {
+                    const sheets = workbookAsAny.getSheets() || [];
+                    const matchedSheet = sheets.find((sheet: any) => {
+                        const sheetId = typeof sheet?.getSheetId === 'function' ? sheet.getSheetId() : sheet?.getId?.();
+                        return String(sheetId) === String(worksheetId);
+                    });
+                    sh = matchedSheet || sh;
+                }
+            }
+
+            if (!sh) return;
             const range = sh?.getRange(row, col);
             if (range) {
-                range.setValue(formula ?? value);
+                suppressCellChangeRef.current = silent;
+                try {
+                    range.setValue(formula ?? value);
+                } finally {
+                    suppressCellChangeRef.current = false;
+                }
             }
         },
     }));

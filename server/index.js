@@ -92,18 +92,20 @@ const transporter = nodemailer.createTransport({
 });
 
 // Test DB Connection
-pool.connect((err, client, release) => {
-    if (err) {
-        return console.error('Error acquiring client', err.stack);
-    }
-    client.query('SELECT NOW()', (err, result) => {
-        release();
+if (process.env.NODE_ENV !== 'test') {
+    pool.connect((err, client, release) => {
         if (err) {
-            return console.error('Error executing query', err.stack);
+            return console.error('Error acquiring client', err.stack);
         }
-        console.log('Connected to PostgreSQL Database');
+        client.query('SELECT NOW()', (err, result) => {
+            release();
+            if (err) {
+                return console.error('Error executing query', err.stack);
+            }
+            console.log('Connected to PostgreSQL Database');
+        });
     });
-});
+}
 
 // Create tables if they don't exist
 const createTables = async () => {
@@ -206,10 +208,19 @@ const createTables = async () => {
                 value TEXT,
                 formula TEXT,
                 style JSONB,
+                cell_version INT DEFAULT 1,
+                last_edited_by VARCHAR(255),
                 UNIQUE(worksheet_id, row_idx, col_idx)
             )
         `);
         console.log('Cells table ready');
+
+        // Migration: add cell_version and last_edited_by columns if missing
+        await pool.query(`ALTER TABLE cells ADD COLUMN IF NOT EXISTS cell_version INT DEFAULT 1`);
+        await pool.query(`ALTER TABLE cells ADD COLUMN IF NOT EXISTS last_edited_by VARCHAR(255)`);
+
+        // Migration: add base_cell_version to conflicts table
+        await pool.query(`ALTER TABLE conflicts ADD COLUMN IF NOT EXISTS base_cell_version INT`);
 
         // Commits Table
         await pool.query(`
@@ -266,6 +277,21 @@ const createTables = async () => {
         `);
         console.log('Audit logs table ready');
 
+        // Notifications Table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS notifications (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(255) REFERENCES users(firebase_uid) ON DELETE CASCADE,
+                type VARCHAR(20) DEFAULT 'info',
+                title VARCHAR(255) NOT NULL,
+                message TEXT NOT NULL,
+                metadata JSONB,
+                is_read BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        console.log('Notifications table ready');
+
         // Create indexes for optimized query performance
         await pool.query(`
             CREATE INDEX IF NOT EXISTS idx_workbooks_owner_id ON workbooks(owner_id);
@@ -284,6 +310,8 @@ const createTables = async () => {
             CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_verifications(email);
             CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
             CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);
         `);
         console.log('Database indexes created successfully');
 
@@ -292,7 +320,9 @@ const createTables = async () => {
     }
 };
 
-createTables();
+if (process.env.NODE_ENV !== 'test') {
+    createTables();
+}
 
 const diffEngine = new DiffEngine(pool);
 
@@ -305,6 +335,212 @@ const logAuditEvent = async (userId, userEmail, action, details, ipAddress) => {
         );
     } catch (err) {
         logger.error('Failed to write audit log', { error: err.message, action });
+    }
+};
+
+const createNotifications = async ({ userIds = [], type = 'info', title, message, metadata = null }) => {
+    if (!title || !message || !Array.isArray(userIds) || userIds.length === 0) return;
+
+    const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+    for (const userId of uniqueUserIds) {
+        try {
+            const notificationResult = await pool.query(
+                `INSERT INTO notifications (user_id, type, title, message, metadata)
+                 VALUES ($1, $2, $3, $4, $5)
+                 RETURNING id, created_at, is_read`,
+                [userId, type, title, message, metadata ? JSON.stringify(metadata) : null]
+            );
+
+            const insertedNotification = notificationResult.rows[0] || {};
+            io.to(`user-${userId}`).emit('notification:new', {
+                id: insertedNotification.id,
+                user_id: userId,
+                userId,
+                type,
+                title,
+                message,
+                metadata,
+                is_read: insertedNotification.is_read ?? false,
+                created_at: insertedNotification.created_at || new Date().toISOString(),
+            });
+        } catch (notificationError) {
+            logger.warn('Failed to create notification', {
+                error: notificationError.message,
+                userId,
+                title,
+            });
+        }
+    }
+};
+
+const toCellAddress = (row, col) => {
+    let colNumber = Number(col) + 1;
+    let colLetters = '';
+
+    while (colNumber > 0) {
+        const remainder = (colNumber - 1) % 26;
+        colLetters = String.fromCharCode(65 + remainder) + colLetters;
+        colNumber = Math.floor((colNumber - 1) / 26);
+    }
+
+    return `${colLetters}${Number(row) + 1}`;
+};
+
+const getRequesterId = (req) => {
+    return (
+        req.headers['x-user-id'] ||
+        req.query?.requester_id ||
+        req.body?.requester_id ||
+        req.body?.actor_id ||
+        req.body?.user_id ||
+        req.body?.owner_id ||
+        null
+    );
+};
+
+const requireRequester = async (req, res, next) => {
+    try {
+        const requesterId = getRequesterId(req);
+        if (!requesterId) {
+            return res.status(401).json({ error: 'requester_id is required', code: 'REQUESTER_REQUIRED' });
+        }
+
+        const requesterResult = await pool.query(
+            'SELECT firebase_uid, email, role FROM users WHERE firebase_uid = $1',
+            [requesterId]
+        );
+
+        if (requesterResult.rows.length === 0) {
+            return res.status(401).json({ error: 'Requester not found', code: 'REQUESTER_NOT_FOUND' });
+        }
+
+        req.requester = requesterResult.rows[0];
+        req.requesterId = requesterResult.rows[0].firebase_uid;
+        req.requesterRole = (requesterResult.rows[0].role || 'user').toLowerCase();
+        next();
+    } catch (error) {
+        logger.error('Requester validation failed', { error: error.message });
+        res.status(500).json({ error: 'Failed to validate requester' });
+    }
+};
+
+const requireAdmin = (req, res, next) => {
+    if (!req.requesterRole || req.requesterRole !== 'admin') {
+        return res.status(403).json({ error: 'Admin role required', code: 'ADMIN_REQUIRED' });
+    }
+    next();
+};
+
+const requireNonViewer = (req, res, next) => {
+    if (req.requesterRole === 'viewer') {
+        return res.status(403).json({ error: 'Viewer role cannot modify data', code: 'VIEWER_READ_ONLY' });
+    }
+    next();
+};
+
+const loadWorkbookAccess = async (req, res, next) => {
+    try {
+        const workbookId = parseInt(req.params.id || req.body?.workbook_id, 10);
+        if (!workbookId || Number.isNaN(workbookId)) {
+            return res.status(400).json({ error: 'Valid workbook ID is required', code: 'INVALID_WORKBOOK_ID' });
+        }
+
+        const workbookResult = await pool.query(
+            `SELECT
+                w.id,
+                w.name,
+                w.owner_id,
+                CASE WHEN wc.user_id IS NOT NULL THEN true ELSE false END as is_collaborator
+             FROM workbooks w
+             LEFT JOIN workbook_collaborators wc
+                ON wc.workbook_id = w.id AND wc.user_id = $2
+             WHERE w.id = $1`,
+            [workbookId, req.requesterId]
+        );
+
+        if (workbookResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Workbook not found', code: 'WORKBOOK_NOT_FOUND' });
+        }
+
+        const workbook = workbookResult.rows[0];
+        const isOwner = workbook.owner_id === req.requesterId;
+        const isCollaborator = workbook.is_collaborator === true;
+        const isAdmin = req.requesterRole === 'admin';
+
+        req.workbookAccess = {
+            workbookId,
+            workbook,
+            isOwner,
+            isCollaborator,
+            isAdmin,
+            canRead: isOwner || isCollaborator || isAdmin,
+            canWrite: (isOwner || isCollaborator || isAdmin) && req.requesterRole !== 'viewer',
+        };
+
+        next();
+    } catch (error) {
+        logger.error('Failed loading workbook access', { error: error.message, requesterId: req.requesterId });
+        res.status(500).json({ error: 'Failed to evaluate workbook access' });
+    }
+};
+
+const requireWorkbookRead = (req, res, next) => {
+    if (!req.workbookAccess?.canRead) {
+        return res.status(403).json({ error: 'Access denied to workbook', code: 'WORKBOOK_READ_FORBIDDEN' });
+    }
+    next();
+};
+
+const requireWorkbookWrite = (req, res, next) => {
+    if (!req.workbookAccess?.canWrite) {
+        return res.status(403).json({ error: 'Write access denied for workbook', code: 'WORKBOOK_WRITE_FORBIDDEN' });
+    }
+    next();
+};
+
+const requireWorkbookOwnerOrAdmin = (req, res, next) => {
+    if (!req.workbookAccess || (!req.workbookAccess.isOwner && !req.workbookAccess.isAdmin)) {
+        return res.status(403).json({ error: 'Owner or admin access required', code: 'OWNER_REQUIRED' });
+    }
+    next();
+};
+
+const loadCommitAccess = async (req, res, next) => {
+    try {
+        const commitId = parseInt(req.params.id, 10);
+        if (!commitId || Number.isNaN(commitId)) {
+            return res.status(400).json({ error: 'Valid commit ID is required', code: 'INVALID_COMMIT_ID' });
+        }
+
+        const commitResult = await pool.query(
+            `SELECT c.*, w.owner_id,
+                    CASE WHEN wc.user_id IS NOT NULL THEN true ELSE false END as is_collaborator
+             FROM commits c
+             JOIN workbooks w ON w.id = c.workbook_id
+             LEFT JOIN workbook_collaborators wc
+                ON wc.workbook_id = w.id AND wc.user_id = $2
+             WHERE c.id = $1`,
+            [commitId, req.requesterId]
+        );
+
+        if (commitResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Commit not found', code: 'COMMIT_NOT_FOUND' });
+        }
+
+        const commit = commitResult.rows[0];
+        const isOwner = commit.owner_id === req.requesterId;
+        const isCollaborator = commit.is_collaborator === true;
+        const isAdmin = req.requesterRole === 'admin';
+
+        if (!(isOwner || isCollaborator || isAdmin)) {
+            return res.status(403).json({ error: 'Access denied for commit', code: 'COMMIT_READ_FORBIDDEN' });
+        }
+
+        req.commitAccess = { commit, isOwner, isCollaborator, isAdmin };
+        next();
+    } catch (error) {
+        logger.error('Failed loading commit access', { error: error.message, requesterId: req.requesterId });
+        res.status(500).json({ error: 'Failed to evaluate commit access' });
     }
 };
 
@@ -450,6 +686,127 @@ app.post('/api/verify-otp', otpLimiter, async (req, res) => {
     }
 });
 
+// Password reset and account recovery
+app.post('/api/password-reset', authLimiter, async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ error: 'email is required', code: 'EMAIL_REQUIRED' });
+    }
+
+    try {
+        const userResult = await pool.query('SELECT firebase_uid, email FROM users WHERE email = $1', [email]);
+        if (userResult.rows.length === 0) {
+            await logAuditEvent(null, email, 'PASSWORD_RESET_REQUEST_MISSING_USER', { email }, req.ip);
+            return res.status(404).json({ error: 'No account found for this email', code: 'USER_NOT_FOUND' });
+        }
+
+        const resetLink = await admin.auth().generatePasswordResetLink(email);
+        await transporter.sendMail({
+            from: process.env.EMAIL_FROM || 'XcelTrack <noreply@xceltrack.com>',
+            to: email,
+            subject: 'XcelTrack Password Reset',
+            html: `<p>You requested a password reset for XcelTrack.</p><p><a href="${resetLink}">Reset your password</a></p><p>If this was not you, ignore this email.</p>`,
+        });
+
+        await logAuditEvent(userResult.rows[0].firebase_uid, email, 'PASSWORD_RESET_LINK_SENT', { email }, req.ip);
+
+        res.json({ message: 'Password reset link sent successfully' });
+    } catch (error) {
+        logger.error('Password reset failed', { error: error.message, email });
+        await logAuditEvent(null, email, 'PASSWORD_RESET_FAILED', { error: error.message }, req.ip);
+        res.status(500).json({ error: 'Failed to process password reset request' });
+    }
+});
+
+// Notifications feed for requester
+app.get('/api/notifications', requireRequester, async (req, res) => {
+    const { limit = 50, offset = 0, unreadOnly = 'false' } = req.query;
+
+    try {
+        const result = await pool.query(
+            `SELECT * FROM notifications
+             WHERE user_id = $1
+               AND ($2::boolean = false OR is_read = false)
+             ORDER BY created_at DESC
+             LIMIT $3 OFFSET $4`,
+            [req.requesterId, unreadOnly === 'true', limit, offset]
+        );
+
+        res.json({ notifications: result.rows });
+    } catch (error) {
+        logger.error('Failed to fetch notifications', { error: error.message, requesterId: req.requesterId });
+        res.status(500).json({ error: 'Failed to fetch notifications' });
+    }
+});
+
+// Create notification (admin/system use)
+app.post('/api/notifications', requireRequester, requireAdmin, async (req, res) => {
+    const { user_ids = [], type = 'info', title, message, metadata } = req.body;
+
+    if (!Array.isArray(user_ids) || user_ids.length === 0 || !title || !message) {
+        return res.status(400).json({ error: 'user_ids, title and message are required', code: 'INVALID_NOTIFICATION_PAYLOAD' });
+    }
+
+    await createNotifications({ userIds: user_ids, type, title, message, metadata });
+    res.status(201).json({ message: 'Notifications created' });
+});
+
+// Mark one notification as read
+app.post('/api/notifications/:id/read', requireRequester, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            `UPDATE notifications
+             SET is_read = true
+             WHERE id = $1 AND user_id = $2
+             RETURNING id`,
+            [id, req.requesterId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Notification not found', code: 'NOTIFICATION_NOT_FOUND' });
+        }
+
+        res.json({ message: 'Notification marked as read' });
+    } catch (error) {
+        logger.error('Failed to mark notification as read', { error: error.message, requesterId: req.requesterId, notificationId: id });
+        res.status(500).json({ error: 'Failed to update notification' });
+    }
+});
+
+// Mark all notifications as read
+app.post('/api/notifications/read-all', requireRequester, async (req, res) => {
+    try {
+        await pool.query(
+            'UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false',
+            [req.requesterId]
+        );
+        res.json({ message: 'All notifications marked as read' });
+    } catch (error) {
+        logger.error('Failed to mark all notifications as read', { error: error.message, requesterId: req.requesterId });
+        res.status(500).json({ error: 'Failed to update notifications' });
+    }
+});
+
+// Delete a notification
+app.delete('/api/notifications/:id', requireRequester, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            'DELETE FROM notifications WHERE id = $1 AND user_id = $2 RETURNING id',
+            [id, req.requesterId]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Notification not found', code: 'NOTIFICATION_NOT_FOUND' });
+        }
+        res.json({ message: 'Notification cleared' });
+    } catch (error) {
+        logger.error('Failed to delete notification', { error: error.message, requesterId: req.requesterId, notificationId: id });
+        res.status(500).json({ error: 'Failed to clear notification' });
+    }
+});
+
 // Sync Endpoint
 app.post('/api/sync-user', authLimiter, async (req, res) => {
     const { uid, email, name } = req.body;
@@ -536,12 +893,16 @@ const upload = multer({ storage: multer.memoryStorage() });
 // --- Workbook & Excel Processing Endpoints ---
 
 // Upload Workbook
-app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), async (req, res) => {
+app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), requireRequester, requireNonViewer, async (req, res) => {
     const { owner_id, owner_name } = req.body;
     const file = req.file;
 
     if (!file || !owner_id) {
         return res.status(400).json({ error: 'File and owner_id are required' });
+    }
+
+    if (req.requesterRole !== 'admin' && owner_id !== req.requesterId) {
+        return res.status(403).json({ error: 'Requester must match owner_id', code: 'OWNER_MISMATCH' });
     }
 
     // Validate file
@@ -607,6 +968,14 @@ app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), async (r
             owner_id
         });
 
+        await createNotifications({
+            userIds: [owner_id],
+            type: 'success',
+            title: 'Workbook uploaded',
+            message: `${file.originalname} was uploaded successfully.`,
+            metadata: { workbookId: newWorkbook.id },
+        });
+
         res.status(201).json({
             message: 'Workbook uploaded and initialized successfully',
             workbook: newWorkbook,
@@ -631,10 +1000,14 @@ app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), async (r
 });
 
 // Get User's Workbooks
-app.get('/api/workbooks', generalLimiter, async (req, res) => {
+app.get('/api/workbooks', generalLimiter, requireRequester, async (req, res) => {
     const { owner_id } = req.query;
     if (!owner_id) {
         return res.status(400).json({ error: 'owner_id is required' });
+    }
+
+    if (req.requesterRole !== 'admin' && owner_id !== req.requesterId) {
+        return res.status(403).json({ error: 'You can only fetch your own workbooks', code: 'OWNER_QUERY_FORBIDDEN' });
     }
 
     try {
@@ -682,7 +1055,7 @@ app.get('/api/workbooks', generalLimiter, async (req, res) => {
 });
 
 // Get Workbook Data (Full Load for Editor)
-app.get('/api/workbooks/:id', async (req, res) => {
+app.get('/api/workbooks/:id', requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -712,6 +1085,7 @@ app.get('/api/workbooks/:id', async (req, res) => {
                 cellData[cell.row_idx][cell.col_idx] = {
                     v: cell.value,
                     f: cell.formula,
+                    cellVersion: cell.cell_version || 1,
                     // Map styles back to Univer format if needed (simplified for now)
                 };
             });
@@ -729,6 +1103,7 @@ app.get('/api/workbooks/:id', async (req, res) => {
         const univerData = {
             id: workbook.id.toString(),
             name: workbook.name,
+            owner_id: workbook.owner_id,
             appVersion: '3.0.0',
             sheets: sheetsData,
             sheetOrder: sheetOrder,
@@ -744,12 +1119,12 @@ app.get('/api/workbooks/:id', async (req, res) => {
 });
 
 // Add Workbook Collaborator
-app.post('/api/workbooks/:id/collaborators', async (req, res) => {
+app.post('/api/workbooks/:id/collaborators', requireRequester, loadWorkbookAccess, requireWorkbookOwnerOrAdmin, async (req, res) => {
     const { id } = req.params;
     const { owner_id, collaborator_id } = req.body;
 
-    if (!owner_id || !collaborator_id) {
-        return res.status(400).json({ error: 'owner_id and collaborator_id are required' });
+    if (!collaborator_id) {
+        return res.status(400).json({ error: 'collaborator_id is required', code: 'COLLABORATOR_REQUIRED' });
     }
 
     try {
@@ -762,11 +1137,11 @@ app.post('/api/workbooks/:id/collaborators', async (req, res) => {
             return res.status(404).json({ error: 'Workbook not found' });
         }
 
-        if (workbookResult.rows[0].owner_id !== owner_id) {
+        if (!req.workbookAccess.isOwner && !req.workbookAccess.isAdmin) {
             return res.status(403).json({ error: 'Only the workbook owner can add collaborators' });
         }
 
-        if (owner_id === collaborator_id) {
+        if (req.workbookAccess.workbook.owner_id === collaborator_id) {
             return res.status(400).json({ error: 'Owner is already a collaborator by default' });
         }
 
@@ -784,15 +1159,23 @@ app.post('/api/workbooks/:id/collaborators', async (req, res) => {
              VALUES ($1, $2, $3)
              ON CONFLICT (workbook_id, user_id) DO NOTHING
              RETURNING *`,
-            [id, collaborator_id, owner_id]
+            [id, collaborator_id, req.requesterId]
         );
 
-        await cache.del(cache.userWorkbooksKey(owner_id));
+        await cache.del(cache.userWorkbooksKey(req.workbookAccess.workbook.owner_id));
         await cache.del(cache.userWorkbooksKey(collaborator_id));
 
         if (insertResult.rows.length === 0) {
             return res.json({ message: 'User is already a collaborator', collaborator: userResult.rows[0] });
         }
+
+        await createNotifications({
+            userIds: [collaborator_id],
+            type: 'info',
+            title: 'Workbook shared with you',
+            message: `${req.workbookAccess.workbook.name} has been shared with you.`,
+            metadata: { workbookId: Number(id), sharedBy: req.requesterId },
+        });
 
         res.status(201).json({
             message: 'Collaborator added successfully',
@@ -802,15 +1185,86 @@ app.post('/api/workbooks/:id/collaborators', async (req, res) => {
         logger.error('Error adding workbook collaborator', {
             error: error.message,
             workbookId: id,
-            owner_id,
+            owner_id: req.workbookAccess?.workbook?.owner_id,
             collaborator_id,
         });
         res.status(500).json({ error: 'Failed to add collaborator' });
     }
 });
 
+// List Workbook Collaborators
+app.get('/api/workbooks/:id/collaborators', requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await pool.query(
+            `SELECT
+                wc.id,
+                wc.user_id,
+                wc.added_by,
+                wc.added_at,
+                u.name,
+                u.email,
+                u.role
+             FROM workbook_collaborators wc
+             JOIN users u ON u.firebase_uid = wc.user_id
+             WHERE wc.workbook_id = $1
+             ORDER BY wc.added_at DESC`,
+            [id]
+        );
+
+        res.json({ collaborators: result.rows });
+    } catch (error) {
+        logger.error('Error listing collaborators', { error: error.message, workbookId: id });
+        res.status(500).json({ error: 'Failed to fetch collaborators' });
+    }
+});
+
+// Remove Workbook Collaborator
+app.delete('/api/workbooks/:id/collaborators/:collaboratorId', requireRequester, loadWorkbookAccess, requireWorkbookOwnerOrAdmin, async (req, res) => {
+    const { id, collaboratorId } = req.params;
+
+    try {
+        if (collaboratorId === req.workbookAccess.workbook.owner_id) {
+            return res.status(400).json({ error: 'Owner cannot be removed as collaborator', code: 'OWNER_NOT_REMOVABLE' });
+        }
+
+        const result = await pool.query(
+            `DELETE FROM workbook_collaborators
+             WHERE workbook_id = $1 AND user_id = $2
+             RETURNING user_id`,
+            [id, collaboratorId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Collaborator not found', code: 'COLLABORATOR_NOT_FOUND' });
+        }
+
+        await cache.del(cache.userWorkbooksKey(collaboratorId));
+        await cache.del(cache.userWorkbooksKey(req.workbookAccess.workbook.owner_id));
+
+        await createNotifications({
+            userIds: [collaboratorId],
+            type: 'warning',
+            title: 'Access removed',
+            message: `Your access to ${req.workbookAccess.workbook.name} has been removed.`,
+            metadata: { workbookId: Number(id), removedBy: req.requesterId },
+        });
+
+        res.json({ message: 'Collaborator removed successfully', collaborator_id: collaboratorId });
+    } catch (error) {
+        logger.error('Error removing collaborator', {
+            error: error.message,
+            workbookId: id,
+            collaboratorId,
+            requesterId: req.requesterId,
+        });
+        res.status(500).json({ error: 'Failed to remove collaborator' });
+    }
+});
+
 // Delete Workbook (Owner only)
-app.delete('/api/workbooks/:id', async (req, res) => {
+app.delete('/api/workbooks/:id', requireRequester, loadWorkbookAccess, requireWorkbookOwnerOrAdmin, async (req, res) => {
     const { id } = req.params;
     const requesterId = req.query.requester_id || req.body?.requester_id;
 
@@ -829,10 +1283,6 @@ app.delete('/api/workbooks/:id', async (req, res) => {
         }
 
         const workbook = workbookResult.rows[0];
-        if (workbook.owner_id !== requesterId) {
-            return res.status(403).json({ error: 'Only the owner can delete this workbook' });
-        }
-
         const collaboratorRows = await pool.query(
             'SELECT user_id FROM workbook_collaborators WHERE workbook_id = $1',
             [id]
@@ -845,6 +1295,14 @@ app.delete('/api/workbooks/:id', async (req, res) => {
             await cache.del(cache.userWorkbooksKey(row.user_id));
         }
 
+        await createNotifications({
+            userIds: [requesterId, ...collaboratorRows.rows.map((row) => row.user_id)],
+            type: 'warning',
+            title: 'Workbook deleted',
+            message: `${workbook.name} has been deleted.`,
+            metadata: { workbookId: Number(id), deletedBy: requesterId },
+        });
+
         res.json({ message: 'Workbook deleted successfully', workbook_id: id, name: workbook.name });
     } catch (error) {
         logger.error('Error deleting workbook', { error: error.message, workbookId: id, requesterId });
@@ -853,14 +1311,40 @@ app.delete('/api/workbooks/:id', async (req, res) => {
 });
 
 // Create Worksheet
-app.post('/api/workbooks/:id/sheets', async (req, res) => {
+app.post('/api/workbooks/:id/sheets', requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
     const { id } = req.params;
     const { name, order } = req.body;
 
     try {
+        const cleanedName = (name || '').trim();
+        if (!cleanedName) {
+            return res.status(400).json({ error: 'Worksheet name is required', code: 'SHEET_NAME_REQUIRED' });
+        }
+
+        const duplicateResult = await pool.query(
+            'SELECT id FROM worksheets WHERE workbook_id = $1 AND LOWER(name) = LOWER($2) LIMIT 1',
+            [id, cleanedName]
+        );
+
+        if (duplicateResult.rows.length > 0) {
+            return res.status(409).json({ error: 'Worksheet name already exists', code: 'DUPLICATE_SHEET_NAME' });
+        }
+
+        const maxOrderResult = await pool.query(
+            'SELECT COALESCE(MAX(sheet_order), -1) as max_order FROM worksheets WHERE workbook_id = $1',
+            [id]
+        );
+        const maxOrder = parseInt(maxOrderResult.rows[0].max_order, 10);
+        const targetOrder = Number.isInteger(order) ? Math.min(Math.max(order, 0), maxOrder + 1) : maxOrder + 1;
+
+        await pool.query(
+            'UPDATE worksheets SET sheet_order = sheet_order + 1 WHERE workbook_id = $1 AND sheet_order >= $2',
+            [id, targetOrder]
+        );
+
         const result = await pool.query(
             'INSERT INTO worksheets (workbook_id, name, sheet_order) VALUES ($1, $2, $3) RETURNING *',
-            [id, name, order || 0]
+            [id, cleanedName, targetOrder]
         );
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -870,14 +1354,28 @@ app.post('/api/workbooks/:id/sheets', async (req, res) => {
 });
 
 // Rename Worksheet
-app.put('/api/workbooks/:id/sheets/:sheetId', async (req, res) => {
-    const { sheetId } = req.params;
+app.put('/api/workbooks/:id/sheets/:sheetId', requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
+    const { id, sheetId } = req.params;
     const { name } = req.body;
 
     try {
+        const cleanedName = (name || '').trim();
+        if (!cleanedName) {
+            return res.status(400).json({ error: 'Worksheet name is required', code: 'SHEET_NAME_REQUIRED' });
+        }
+
+        const duplicateResult = await pool.query(
+            'SELECT id FROM worksheets WHERE workbook_id = $1 AND LOWER(name) = LOWER($2) AND id <> $3 LIMIT 1',
+            [id, cleanedName, sheetId]
+        );
+
+        if (duplicateResult.rows.length > 0) {
+            return res.status(409).json({ error: 'Worksheet name already exists', code: 'DUPLICATE_SHEET_NAME' });
+        }
+
         const result = await pool.query(
-            'UPDATE worksheets SET name = $1 WHERE id = $2 RETURNING *',
-            [name, sheetId]
+            'UPDATE worksheets SET name = $1 WHERE id = $2 AND workbook_id = $3 RETURNING *',
+            [cleanedName, sheetId, id]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Worksheet not found' });
         res.json(result.rows[0]);
@@ -888,11 +1386,28 @@ app.put('/api/workbooks/:id/sheets/:sheetId', async (req, res) => {
 });
 
 // Delete Worksheet
-app.delete('/api/workbooks/:id/sheets/:sheetId', async (req, res) => {
-    const { sheetId } = req.params;
+app.delete('/api/workbooks/:id/sheets/:sheetId', requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
+    const { id, sheetId } = req.params;
 
     try {
-        await pool.query('DELETE FROM worksheets WHERE id = $1', [sheetId]);
+        const countResult = await pool.query(
+            'SELECT COUNT(*)::int as count FROM worksheets WHERE workbook_id = $1',
+            [id]
+        );
+
+        if (countResult.rows[0].count <= 1) {
+            return res.status(409).json({ error: 'Cannot delete the last worksheet', code: 'LAST_WORKSHEET_PROTECTED' });
+        }
+
+        const deletedResult = await pool.query(
+            'DELETE FROM worksheets WHERE id = $1 AND workbook_id = $2 RETURNING id',
+            [sheetId, id]
+        );
+
+        if (deletedResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Worksheet not found', code: 'SHEET_NOT_FOUND' });
+        }
+
         res.json({ message: 'Worksheet deleted successfully' });
     } catch (error) {
         logger.error('Error deleting worksheet', { error: error.message, sheetId });
@@ -901,14 +1416,29 @@ app.delete('/api/workbooks/:id/sheets/:sheetId', async (req, res) => {
 });
 
 // Reorder Worksheets
-app.put('/api/workbooks/:id/sheets/reorder', async (req, res) => {
+app.put('/api/workbooks/:id/sheets/reorder', requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
     const { id } = req.params;
     const { orders } = req.body; // Array of { id: number, order: number }
+
+    if (!Array.isArray(orders) || orders.length === 0) {
+        return res.status(400).json({ error: 'orders array is required', code: 'INVALID_SHEET_ORDER' });
+    }
 
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
+
+        const sheetResult = await client.query(
+            'SELECT id FROM worksheets WHERE workbook_id = $1',
+            [id]
+        );
+        const workbookSheetIds = new Set(sheetResult.rows.map((row) => String(row.id)));
+
         for (const item of orders) {
+            if (!workbookSheetIds.has(String(item.id)) || !Number.isInteger(item.order)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Invalid reorder payload', code: 'INVALID_SHEET_ORDER' });
+            }
             await client.query(
                 'UPDATE worksheets SET sheet_order = $1 WHERE id = $2 AND workbook_id = $3',
                 [item.order, item.id, id]
@@ -925,9 +1455,177 @@ app.put('/api/workbooks/:id/sheets/reorder', async (req, res) => {
     }
 });
 
+// List workbook conflicts
+app.get('/api/workbooks/:id/conflicts', requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const { id } = req.params;
+    const { status = 'pending' } = req.query;
+
+    try {
+        const result = await pool.query(
+            `SELECT
+                c.*,
+                u1.name as user1_name,
+                u1.email as user1_email,
+                u2.name as user2_name,
+                u2.email as user2_email
+             FROM conflicts c
+             LEFT JOIN users u1 ON u1.firebase_uid = c.user1_id
+             LEFT JOIN users u2 ON u2.firebase_uid = c.user2_id
+             WHERE c.workbook_id = $1
+               AND ($2::text = 'all' OR c.status = $2)
+             ORDER BY c.created_at DESC`,
+            [id, status]
+        );
+
+        res.json({ conflicts: result.rows });
+    } catch (error) {
+        logger.error('Failed to fetch workbook conflicts', { error: error.message, workbookId: id });
+        res.status(500).json({ error: 'Failed to fetch conflicts' });
+    }
+});
+
+// Lightweight check for pending conflicts
+app.get('/api/workbooks/:id/has-conflicts', requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            "SELECT COUNT(*)::int as count FROM conflicts WHERE workbook_id = $1 AND status = 'pending'",
+            [id]
+        );
+        const count = result.rows[0].count;
+        res.json({ hasConflicts: count > 0, pendingCount: count });
+    } catch (error) {
+        logger.error('Failed to check conflicts', { error: error.message, workbookId: id });
+        res.status(500).json({ error: 'Failed to check conflicts' });
+    }
+});
+
+// Resolve a conflict with manual or policy-based strategy
+app.post('/api/workbooks/:id/conflicts/:conflictId/resolve', requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
+    const { id, conflictId } = req.params;
+    const { policy = 'manual', resolution = 'manual', resolvedValue } = req.body;
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const conflictResult = await client.query(
+            `SELECT * FROM conflicts
+             WHERE id = $1 AND workbook_id = $2`,
+            [conflictId, id]
+        );
+
+        if (conflictResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Conflict not found', code: 'CONFLICT_NOT_FOUND' });
+        }
+
+        const conflict = conflictResult.rows[0];
+        if (conflict.status === 'resolved') {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: 'Conflict already resolved', code: 'CONFLICT_ALREADY_RESOLVED' });
+        }
+
+        let finalValue = resolvedValue;
+        let finalResolution = resolution;
+
+        if (policy === 'last-writer-wins') {
+            finalValue = conflict.user2_value;
+            finalResolution = 'last-writer-wins';
+        }
+
+        if (finalValue === undefined || finalValue === null) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'resolvedValue is required for manual resolution', code: 'RESOLVED_VALUE_REQUIRED' });
+        }
+
+        const address = toCellAddress(conflict.row_idx, conflict.col_idx);
+        await client.query(
+            `INSERT INTO cells (worksheet_id, row_idx, col_idx, address, value, formula, style, cell_version, last_edited_by)
+             VALUES ($1, $2, $3, $4, $5, NULL, '{}'::jsonb, 1, $6)
+             ON CONFLICT (worksheet_id, row_idx, col_idx)
+             DO UPDATE SET value = EXCLUDED.value, cell_version = cells.cell_version + 1, last_edited_by = EXCLUDED.last_edited_by`,
+            [conflict.worksheet_id, conflict.row_idx, conflict.col_idx, address, finalValue, req.requesterId]
+        );
+
+        await client.query(
+            `UPDATE conflicts
+             SET status = 'resolved',
+                 resolved_by = $1,
+                 resolved_at = NOW(),
+                 resolution = $2
+             WHERE id = $3`,
+            [req.requesterId, finalResolution, conflictId]
+        );
+
+        await client.query('UPDATE workbooks SET updated_at = NOW() WHERE id = $1', [id]);
+
+        await logAuditEvent(
+            req.requesterId,
+            req.requester.email,
+            'CONFLICT_RESOLVED',
+            {
+                workbookId: parseInt(id, 10),
+                conflictId: parseInt(conflictId, 10),
+                policy,
+                resolution: finalResolution,
+                worksheetId: conflict.worksheet_id,
+                row: conflict.row_idx,
+                col: conflict.col_idx,
+            },
+            req.ip
+        );
+
+        await createNotifications({
+            userIds: [conflict.user1_id, conflict.user2_id],
+            type: 'success',
+            title: 'Conflict resolved',
+            message: `A conflict in workbook ${id} was resolved by ${req.requester.email || req.requesterId}.`,
+            metadata: {
+                workbookId: parseInt(id, 10),
+                conflictId: parseInt(conflictId, 10),
+                resolution: finalResolution,
+            },
+        });
+
+        await client.query('COMMIT');
+
+        io.to(`workbook-${id}`).emit('conflict-resolved', {
+            conflictId: parseInt(conflictId, 10),
+            resolution: finalResolution,
+            resolvedValue: finalValue,
+            resolvedBy: req.requesterId,
+            cellData: {
+                worksheetId: String(conflict.worksheet_id),
+                row: conflict.row_idx,
+                col: conflict.col_idx,
+                value: finalValue,
+            },
+        });
+
+        res.json({
+            message: 'Conflict resolved successfully',
+            conflictId: parseInt(conflictId, 10),
+            resolution: finalResolution,
+            value: finalValue,
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        logger.error('Failed to resolve conflict', {
+            error: error.message,
+            workbookId: id,
+            conflictId,
+            requesterId: req.requesterId,
+        });
+        res.status(500).json({ error: 'Failed to resolve conflict' });
+    } finally {
+        client.release();
+    }
+});
+
 
 // Get all users (from Postgres)
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', requireRequester, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
         res.json(result.rows);
@@ -1050,7 +1748,7 @@ app.delete('/api/admin/users/:uid', adminLimiter, async (req, res) => {
 // ============================================
 
 // Admin Stats - Real-time overview data
-app.get('/api/admin/stats', async (req, res) => {
+app.get('/api/admin/stats', requireRequester, requireAdmin, async (req, res) => {
     try {
         const [usersResult, workbooksResult, commitsResult, conflictsResult, recentSignupsResult, dbSizeResult] = await Promise.all([
             pool.query('SELECT COUNT(*) as count FROM users'),
@@ -1076,7 +1774,7 @@ app.get('/api/admin/stats', async (req, res) => {
 });
 
 // Admin Recent Activity - all commits across all users
-app.get('/api/admin/recent-activity', async (req, res) => {
+app.get('/api/admin/recent-activity', requireRequester, requireAdmin, async (req, res) => {
     const { limit = 20 } = req.query;
     try {
         const result = await pool.query(
@@ -1109,15 +1807,60 @@ app.get('/api/admin/recent-activity', async (req, res) => {
 });
 
 // Audit Logs - Fetch
-app.get('/api/admin/audit-logs', async (req, res) => {
-    const { limit = 100, offset = 0 } = req.query;
+app.get('/api/admin/audit-logs', requireRequester, requireAdmin, async (req, res) => {
+    const {
+        limit = 100,
+        offset = 0,
+        action,
+        user,
+        from,
+        to,
+    } = req.query;
+
     try {
+        const conditions = [];
+        const values = [];
+
+        if (action) {
+            values.push(action);
+            conditions.push(`action ILIKE $${values.length}`);
+        }
+
+        if (user) {
+            values.push(`%${user}%`);
+            conditions.push(`(COALESCE(user_email, '') ILIKE $${values.length} OR COALESCE(user_id, '') ILIKE $${values.length})`);
+        }
+
+        if (from) {
+            values.push(from);
+            conditions.push(`timestamp >= $${values.length}::timestamp`);
+        }
+
+        if (to) {
+            values.push(to);
+            conditions.push(`timestamp <= $${values.length}::timestamp`);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        values.push(limit);
+        values.push(offset);
+
         const result = await pool.query(
-            'SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT $1 OFFSET $2',
-            [limit, offset]
+            `SELECT * FROM audit_logs
+             ${whereClause}
+             ORDER BY timestamp DESC
+             LIMIT $${values.length - 1}
+             OFFSET $${values.length}`,
+            values
         );
 
-        res.json({ logs: result.rows });
+        const countValues = values.slice(0, values.length - 2);
+        const countResult = await pool.query(
+            `SELECT COUNT(*)::int as total FROM audit_logs ${whereClause}`,
+            countValues
+        );
+
+        res.json({ logs: result.rows, total: countResult.rows[0].total });
     } catch (error) {
         logger.error('Error fetching audit logs', { error: error.message });
         res.status(500).json({ error: 'Failed to fetch audit logs' });
@@ -1125,7 +1868,7 @@ app.get('/api/admin/audit-logs', async (req, res) => {
 });
 
 // Audit Logs - Create (for manual/programmatic logging)
-app.post('/api/admin/audit-logs', async (req, res) => {
+app.post('/api/admin/audit-logs', requireRequester, requireAdmin, async (req, res) => {
     const { user_id, user_email, action, details, ip_address } = req.body;
     try {
         const result = await pool.query(
@@ -1140,10 +1883,42 @@ app.post('/api/admin/audit-logs', async (req, res) => {
 });
 
 // Audit Logs - Export as CSV
-app.get('/api/admin/audit-logs/export', async (req, res) => {
+app.get('/api/admin/audit-logs/export', requireRequester, requireAdmin, async (req, res) => {
+    const { action, user, from, to, format = 'csv' } = req.query;
+
     try {
-        const result = await pool.query('SELECT * FROM audit_logs ORDER BY timestamp DESC');
+        const conditions = [];
+        const values = [];
+
+        if (action) {
+            values.push(action);
+            conditions.push(`action ILIKE $${values.length}`);
+        }
+
+        if (user) {
+            values.push(`%${user}%`);
+            conditions.push(`(COALESCE(user_email, '') ILIKE $${values.length} OR COALESCE(user_id, '') ILIKE $${values.length})`);
+        }
+
+        if (from) {
+            values.push(from);
+            conditions.push(`timestamp >= $${values.length}::timestamp`);
+        }
+
+        if (to) {
+            values.push(to);
+            conditions.push(`timestamp <= $${values.length}::timestamp`);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+        const result = await pool.query(`SELECT * FROM audit_logs ${whereClause} ORDER BY timestamp DESC`, values);
         const logs = result.rows;
+
+        if (format === 'json') {
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Disposition', `attachment; filename="audit_logs_${new Date().toISOString().split('T')[0]}.json"`);
+            return res.send(JSON.stringify(logs, null, 2));
+        }
 
         const headers = ['ID', 'Timestamp', 'User ID', 'User Email', 'Action', 'Details', 'IP Address'];
         const csvRows = logs.map(log => [
@@ -1168,7 +1943,7 @@ app.get('/api/admin/audit-logs/export', async (req, res) => {
 });
 
 // Compliance Report
-app.get('/api/admin/compliance-report', async (req, res) => {
+app.get('/api/admin/compliance-report', requireRequester, requireAdmin, async (req, res) => {
     try {
         const [logsCount, userDist, lastLog] = await Promise.all([
             pool.query('SELECT COUNT(*) as count FROM audit_logs'),
@@ -1199,7 +1974,7 @@ app.get('/api/admin/compliance-report', async (req, res) => {
 });
 
 // Admin Analytics - aggregated data
-app.get('/api/admin/analytics', async (req, res) => {
+app.get('/api/admin/analytics', requireRequester, requireAdmin, async (req, res) => {
     try {
         const [userGrowth, commitActivity, systemMetrics, recentAuditLogs] = await Promise.all([
             // Users created per day (last 7 days)
@@ -1256,11 +2031,34 @@ app.get('/api/admin/analytics', async (req, res) => {
 // ============================================
 
 // Create a new commit (snapshot of current workbook state)
-app.post('/api/commits', commitLimiter, async (req, res) => {
+app.post('/api/commits', commitLimiter, requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
     const { workbook_id, user_id, message } = req.body;
 
     if (!workbook_id || !user_id) {
         return res.status(400).json({ error: 'workbook_id and user_id are required' });
+    }
+
+    if (req.requesterRole !== 'admin' && user_id !== req.requesterId) {
+        return res.status(403).json({ error: 'Requester must match user_id for commit', code: 'COMMIT_USER_MISMATCH' });
+    }
+
+    // ── Block commit if there are pending conflicts for this workbook ──
+    try {
+        const pendingConflicts = await pool.query(
+            "SELECT COUNT(*)::int as count FROM conflicts WHERE workbook_id = $1 AND status = 'pending'",
+            [workbook_id]
+        );
+        const pendingCount = pendingConflicts.rows[0].count;
+        if (pendingCount > 0) {
+            return res.status(409).json({
+                error: 'Cannot commit while conflicts are pending. Resolve all conflicts first.',
+                code: 'PENDING_CONFLICTS_EXIST',
+                pendingCount,
+            });
+        }
+    } catch (conflictCheckErr) {
+        logger.error('Failed to check pending conflicts before commit', { error: conflictCheckErr.message });
+        // Continue with commit if conflict check fails (non-blocking safety)
     }
 
     const client = await pool.connect();
@@ -1356,7 +2154,7 @@ app.post('/api/commits', commitLimiter, async (req, res) => {
 });
 
 // Get commit history for a workbook
-app.get('/api/workbooks/:id/commits', generalLimiter, async (req, res) => {
+app.get('/api/workbooks/:id/commits', generalLimiter, requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
     const { id } = req.params;
     const { limit = 50, offset = 0 } = req.query;
 
@@ -1387,11 +2185,15 @@ app.get('/api/workbooks/:id/commits', generalLimiter, async (req, res) => {
 });
 
 // Get all commits for a user (Global Activity)
-app.get('/api/commits', generalLimiter, async (req, res) => {
+app.get('/api/commits', generalLimiter, requireRequester, async (req, res) => {
     const { user_id, limit = 50, offset = 0 } = req.query;
 
     if (!user_id) {
         return res.status(400).json({ error: 'user_id is required' });
+    }
+
+    if (req.requesterRole !== 'admin' && user_id !== req.requesterId) {
+        return res.status(403).json({ error: 'Access denied for requested user commits', code: 'COMMITS_FORBIDDEN' });
     }
 
     try {
@@ -1425,7 +2227,7 @@ app.get('/api/commits', generalLimiter, async (req, res) => {
 
 
 // Get detailed commit information with cell changes
-app.get('/api/commits/:id', async (req, res) => {
+app.get('/api/commits/:id', requireRequester, loadCommitAccess, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -1469,7 +2271,7 @@ app.get('/api/commits/:id', async (req, res) => {
 });
 
 // Compare two commits (Diff API)
-app.get('/api/workbooks/:id/diff', generalLimiter, async (req, res) => {
+app.get('/api/workbooks/:id/diff', generalLimiter, requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
     const { id } = req.params;
     const { base, head } = req.query;
 
@@ -1477,22 +2279,40 @@ app.get('/api/workbooks/:id/diff', generalLimiter, async (req, res) => {
         return res.status(400).json({ error: 'head commit_id is required' });
     }
 
+    const workbookId = parseInt(id, 10);
+    const headCommitId = parseInt(head, 10);
+    const baseCommitId = base ? parseInt(base, 10) : null;
+
+    if (Number.isNaN(workbookId) || Number.isNaN(headCommitId) || (base && Number.isNaN(baseCommitId))) {
+        return res.status(400).json({ error: 'Invalid commit IDs provided', code: 'INVALID_COMMIT_IDS' });
+    }
+
     try {
-        const diffs = await diffEngine.compareCommits(id, base, head);
+        const commitIdsToCheck = [headCommitId, ...(baseCommitId ? [baseCommitId] : [])];
+        const commitOwnership = await pool.query(
+            'SELECT id FROM commits WHERE workbook_id = $1 AND id = ANY($2::int[])',
+            [workbookId, commitIdsToCheck]
+        );
+
+        if (commitOwnership.rows.length !== commitIdsToCheck.length) {
+            return res.status(400).json({ error: 'One or more commits do not belong to this workbook', code: 'COMMIT_WORKBOOK_MISMATCH' });
+        }
+
+        const diffs = await diffEngine.compareCommits(workbookId, baseCommitId, headCommitId);
         res.json({
-            workbook_id: id,
-            base_commit: base || 'initial',
-            head_commit: head,
+            workbook_id: workbookId,
+            base_commit: baseCommitId || 'initial',
+            head_commit: headCommitId,
             diffs
         });
     } catch (error) {
-        logger.error('Error generating diff', { error: error.message, workbookId: id, base, head });
+        logger.error('Error generating diff', { error: error.message, workbookId, baseCommitId, headCommitId });
         res.status(500).json({ error: error.message });
     }
 });
 
 // Download Workbook as Excel
-app.get('/api/workbooks/:id/download', generalLimiter, async (req, res) => {
+app.get('/api/workbooks/:id/download', generalLimiter, requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -1551,12 +2371,16 @@ app.get('/api/workbooks/:id/download', generalLimiter, async (req, res) => {
 });
 
 // Rollback workbook to a specific commit
-app.post('/api/workbooks/:id/rollback', async (req, res) => {
+app.post('/api/workbooks/:id/rollback', requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
     const { id } = req.params;
     const { commit_id, user_id } = req.body;
 
     if (!commit_id || !user_id) {
         return res.status(400).json({ error: 'commit_id and user_id are required' });
+    }
+
+    if (req.requesterRole !== 'admin' && user_id !== req.requesterId) {
+        return res.status(403).json({ error: 'Requester must match user_id for rollback', code: 'ROLLBACK_USER_MISMATCH' });
     }
 
     const client = await pool.connect();
@@ -1630,7 +2454,7 @@ app.post('/api/workbooks/:id/rollback', async (req, res) => {
 });
 
 // Get Snapshot of Workbook at specific commit (for preview)
-app.get('/api/commits/:id/snapshot', async (req, res) => {
+app.get('/api/commits/:id/snapshot', requireRequester, loadCommitAccess, async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -1711,11 +2535,13 @@ initWebSocket(io, pool);
 // START SERVER
 // ============================================
 
-server.listen(port, () => {
-    logger.info(`Server running on port ${port}`);
-    logger.info('WebSocket server ready');
-    logger.info('All optimization modules loaded successfully');
-});
+if (require.main === module) {
+    server.listen(port, () => {
+        logger.info(`Server running on port ${port}`);
+        logger.info('WebSocket server ready');
+        logger.info('All optimization modules loaded successfully');
+    });
+}
 
 // Graceful shutdown
 const gracefulShutdown = async () => {
@@ -1746,5 +2572,15 @@ const gracefulShutdown = async () => {
     }
 };
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+if (require.main === module) {
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
+}
+
+module.exports = {
+    app,
+    server,
+    pool,
+    io,
+    createTables,
+};

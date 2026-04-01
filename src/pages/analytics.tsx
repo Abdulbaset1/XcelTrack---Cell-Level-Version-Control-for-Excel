@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaDownload } from 'react-icons/fa';
 import { getAdminAnalytics, AdminAnalytics, AuditLog } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const AnalyticsPage: React.FC = () => {
+    const { user } = useAuth();
     const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fetchAnalytics = useCallback(async () => {
+        if (!user?.uid) return;
         try {
-            const data = await getAdminAnalytics();
+            const data = await getAdminAnalytics(user.uid);
             setAnalytics(data);
             setError(null);
         } catch (err: any) {
@@ -17,7 +20,7 @@ const AnalyticsPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user?.uid]);
 
     useEffect(() => {
         fetchAnalytics();
@@ -141,7 +144,8 @@ const AnalyticsPage: React.FC = () => {
                             </p>
                             <button
                                 onClick={() => {
-                                    window.location.href = 'http://localhost:5000/api/admin/audit-logs/export';
+                                    if (!user?.uid) return;
+                                    window.location.href = `http://localhost:5000/api/admin/audit-logs/export?requester_id=${user.uid}`;
                                 }}
                                 disabled={loading}
                                 style={{

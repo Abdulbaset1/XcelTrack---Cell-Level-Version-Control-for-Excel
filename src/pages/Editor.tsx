@@ -16,11 +16,13 @@ import { Commit } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCommitSnapshot, getCommitHistory, createWorksheet, renameWorksheet, deleteWorksheet, reorderWorksheets } from '../services/api';
+import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCommitSnapshot, getCommitHistory, createWorksheet, renameWorksheet, deleteWorksheet, reorderWorksheets, getWorkbookDiff, resolveWorkbookConflict, getWorkbookConflicts, CommitDiff } from '../services/api';
 import HybridSyncBanner from '../components/HybridSyncBanner';
 import ConflictNotificationBanner from '../components/ConflictNotificationBanner';
 import ConflictResolutionViewer from '../components/ConflictResolutionViewer';
 import CommitDetailViewer from '../components/CommitDetailViewer';
+import SemanticDiffSummary from '../components/SemanticDiffSummary';
+import DiffHighlighter from '../components/DiffHighlighter';
 
 const Editor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -28,7 +30,7 @@ const Editor: React.FC = () => {
   const editorRef = React.useRef<ExcelEditorRef>(null);
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { joinWorkbook, leaveWorkbook, sendCursorMove, sendCellEdit, activeUsers, cursors, onCellChange, onConflict, onConflictResolved, resolveConflict } = useWebSocket();
+  const { joinWorkbook, leaveWorkbook, sendCursorMove, sendCellEdit, activeUsers, cursors, onCellChange, onConflict, onConflictResolved, onCellEditRejected, onCellEditAccepted } = useWebSocket();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [workbookData, setWorkbookData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -49,27 +51,96 @@ const Editor: React.FC = () => {
   const [isConflictViewerOpen, setIsConflictViewerOpen] = useState(false);
   const [selectedCommitDetails, setSelectedCommitDetails] = useState<any | null>(null);
   const [, setIsCommitDetailsLoading] = useState(false);
+  const [commitHistory, setCommitHistory] = useState<Commit[]>([]);
+  const [compareBaseCommitId, setCompareBaseCommitId] = useState<number | null>(null);
+  const [comparisonDiffs, setComparisonDiffs] = useState<CommitDiff[]>([]);
+  const [isComparisonLoading, setIsComparisonLoading] = useState(false);
   const [baseCommitId, setBaseCommitId] = useState<number | null>(null);
   const [hasLocalEdits, setHasLocalEdits] = useState(false);
 
+  // ── Cell Version Tracking ───────────────────────────────────────────
+  // Maps "worksheetId:row:col" → current cell_version from server
+  const cellVersionsRef = React.useRef<Map<string, number>>(new Map());
+
   const [error, setError] = useState<string | null>(null);
 
+  const hydratePendingConflicts = React.useCallback(async () => {
+    if (!id || !user?.uid) return [];
+
+    try {
+      const response = await getWorkbookConflicts(parseInt(id, 10), user.uid, 'pending');
+      const hydrated = (response.conflicts || []).map((conflict: any) => ({
+        conflictId: conflict.id,
+        cell: `${conflict.worksheet_id}:${conflict.row_idx}:${conflict.col_idx}`,
+        cellData: {
+          worksheetId: String(conflict.worksheet_id),
+          row: conflict.row_idx,
+          col: conflict.col_idx,
+          value: conflict.user2_value ?? '',
+        },
+        conflictingValue: conflict.user1_value ?? '',
+        user: {
+          userId: conflict.user2_id,
+          userName: conflict.user2_name || 'Collaborator',
+          color: '#10B981',
+        },
+        conflictingUser: {
+          userId: conflict.user1_id,
+          userName: conflict.user1_name || 'Collaborator',
+          color: '#3B82F6',
+        },
+        serverDetected: true,
+      }));
+
+      if (hydrated.length > 0) {
+        setConflicts(hydrated);
+      }
+
+      return hydrated;
+    } catch (pendingError) {
+      console.error('Failed to hydrate pending conflicts:', pendingError);
+      return [];
+    }
+  }, [id, user?.uid]);
+
+  const openConflictResolution = React.useCallback(async () => {
+    if (conflicts.length > 0) {
+      setIsConflictViewerOpen(true);
+      return;
+    }
+
+    const hydrated = await hydratePendingConflicts();
+    if (hydrated.length > 0) {
+      setIsConflictViewerOpen(true);
+      return;
+    }
+
+    showToast('No pending conflicts found right now', 'info');
+  }, [conflicts.length, hydratePendingConflicts, showToast]);
+
   const fetchWorkbook = React.useCallback(async () => {
-    if (!id) return;
+    if (!id || !user?.uid) return;
     setIsLoading(true);
     setError(null);
     try {
       console.log('Fetching workbook:', id);
-      const data = await getWorkbookData(id);
+      const data = await getWorkbookData(id, user.uid);
       console.log('Workbook loaded:', data);
       setWorkbookData(data);
 
       try {
-        const history = await getCommitHistory(parseInt(id), 1, 0);
+        const history = await getCommitHistory(parseInt(id), user.uid, 1, 0);
         const latestCommit = history.commits?.[0];
         setBaseCommitId(latestCommit ? latestCommit.id : null);
       } catch (historyError) {
         console.warn('Unable to fetch latest commit for base version check:', historyError);
+      }
+
+      try {
+        const fullHistory = await getCommitHistory(parseInt(id), user.uid, 100, 0);
+        setCommitHistory(fullHistory.commits || []);
+      } catch (fullHistoryError) {
+        console.warn('Unable to fetch commit history list:', fullHistoryError);
       }
 
       // Update worksheets state from loaded data if needed
@@ -81,6 +152,22 @@ const Editor: React.FC = () => {
         }));
         setWorksheets(loadedSheets);
         if (loadedSheets.length > 0) setActiveWorksheetId(loadedSheets[0].id);
+
+        // ── Populate cell version map from server data ─────────────────
+        const versionMap = new Map<string, number>();
+        for (const sheetId of Object.keys(data.sheets)) {
+          const sheet = data.sheets[sheetId];
+          if (sheet.cellData) {
+            for (const rowIdx of Object.keys(sheet.cellData)) {
+              for (const colIdx of Object.keys(sheet.cellData[rowIdx])) {
+                const cell = sheet.cellData[rowIdx][colIdx];
+                const key = `${sheetId}:${rowIdx}:${colIdx}`;
+                versionMap.set(key, cell.cellVersion || 1);
+              }
+            }
+          }
+        }
+        cellVersionsRef.current = versionMap;
       }
     } catch (error) {
       console.error('Error fetching workbook:', error);
@@ -89,7 +176,7 @@ const Editor: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [id, showToast]);
+  }, [id, showToast, user?.uid]);
 
   // Fetch workbook data when ID changes
   useEffect(() => {
@@ -116,56 +203,125 @@ const Editor: React.FC = () => {
     onCellChange((data: any) => {
       console.log('Cell changed by another user:', data);
       if (editorRef.current && data.cellData) {
-        const { row, col, value, formula } = data.cellData;
-        editorRef.current.updateCell(row, col, value, formula);
+        const { row, col, value, formula, worksheetId, cellVersion } = data.cellData;
+        editorRef.current.updateCell(row, col, value, formula, worksheetId, true);
+
+        // Update local cell version tracking
+        if (cellVersion) {
+          const key = `${worksheetId}:${row}:${col}`;
+          cellVersionsRef.current.set(key, cellVersion);
+        }
       }
     });
   }, [id, onCellChange, showToast]);
+
+  // Listen for cell edit rejections (our own edit was rejected due to conflict)
+  useEffect(() => {
+    if (!id) return;
+    onCellEditRejected((data) => {
+      console.warn('Our cell edit was rejected:', data);
+
+      // Revert the local cell to the server value
+      if (editorRef.current && data.cellData) {
+        const { row, col, worksheetId } = data.cellData;
+        editorRef.current.updateCell(row, col, data.serverValue, data.serverFormula, worksheetId, true);
+      }
+
+      // Update cell version
+      if (data.serverVersion && data.cellData) {
+        const key = `${data.cellData.worksheetId}:${data.cellData.row}:${data.cellData.col}`;
+        cellVersionsRef.current.set(key, data.serverVersion);
+      }
+
+      showToast('⚠️ Edit rejected — a conflict was detected. Please resolve it.', 'warning');
+    });
+  }, [id, onCellEditRejected, showToast]);
+
+  // Listen for cell edit acceptances (update local version tracking)
+  useEffect(() => {
+    if (!id) return;
+    onCellEditAccepted((data) => {
+      if (data.cellVersion && data.cellData) {
+        const key = `${data.cellData.worksheetId}:${data.cellData.row}:${data.cellData.col}`;
+        cellVersionsRef.current.set(key, data.cellVersion);
+      }
+    });
+  }, [id, onCellEditAccepted]);
 
   // Listen for real-time conflicts from other users
   useEffect(() => {
     if (!id) return;
     onConflict((data) => {
+      const isOwner = workbookData?.owner_id && user?.uid === workbookData.owner_id;
+      if (!isOwner) {
+        return;
+      }
+
       console.warn('Conflict received via WebSocket:', data);
-      setConflicts((prev) => [...prev, data]);
+      setConflicts((prev) => {
+        const incomingId = data?.conflictId;
+        const incomingCell = data?.cell;
+
+        const alreadyExists = prev.some((existing: any) => {
+          if (incomingId && existing?.conflictId) {
+            return existing.conflictId === incomingId;
+          }
+          return !!incomingCell && existing?.cell === incomingCell;
+        });
+
+        if (alreadyExists) return prev;
+        return [...prev, data];
+      });
       setIsConflictViewerOpen(true);
       // Mark sync status as error only when an actual conflict is reported
       setSyncStatus('error');
       showToast('⚠️ A conflict was detected! Please resolve it.', 'warning');
     });
-  }, [id, onConflict, showToast]);
+  }, [id, onConflict, showToast, workbookData?.owner_id, user?.uid]);
 
   // Listen for conflict resolutions from other users
   useEffect(() => {
     if (!id) return;
     onConflictResolved((data) => {
-      console.log('Conflict resolved by collaborator:', data);
+      console.log('Conflict resolved:', data);
 
       // Update the local Excel sheet with the resolved value
       if (editorRef.current && data.cellData) {
-        const { row, col, worksheetId } = data.cellData;
-        if (worksheetId === activeWorksheetId) {
-          editorRef.current.updateCell(row, col, data.resolvedValue);
+        const { row, col, worksheetId, cellVersion } = data.cellData;
+        editorRef.current.updateCell(row, col, data.resolvedValue, undefined, worksheetId, true);
+
+        // Update local cell version tracking
+        if (cellVersion) {
+          const key = `${worksheetId}:${row}:${col}`;
+          cellVersionsRef.current.set(key, cellVersion);
         }
       }
 
       setConflicts((prev) => prev.filter((c: any) => c.conflictId !== data.conflictId));
-      showToast('Conflict resolved by a collaborator', 'success');
+      showToast('Conflict resolved successfully', 'success');
     });
-  }, [id, onConflictResolved, showToast, conflicts.length, activeWorksheetId]);
+  }, [id, onConflictResolved, showToast, conflicts.length]);
 
   const handleCellChange = React.useCallback((cell: any) => {
     console.log('Cell changed:', cell);
     setHasLocalEdits(true);
 
-    // Broadcast cell change to other users
+    // Look up the base cell version for conflict detection
+    const row = cell.row || 0;
+    const col = cell.col || 0;
+    const versionKey = `${activeWorksheetId}:${row}:${col}`;
+    const baseCellVersion = cellVersionsRef.current.get(versionKey) ?? null;
+
+    // Broadcast cell change to other users (include baseCellVersion)
     if (id && user) {
       sendCellEdit(parseInt(id), {
-        row: cell.row || 0,
-        col: cell.col || 0,
+        row,
+        col,
         value: cell.value || '',
         formula: cell.formula,
         worksheetId: activeWorksheetId,
+        baseCellVersion,
+        editorId: user.uid,
       });
     }
   }, [id, user, sendCellEdit, activeWorksheetId]);
@@ -189,7 +345,7 @@ const Editor: React.FC = () => {
     const workbookId = parseInt(id || '0');
 
     try {
-      const latestHistory = await getCommitHistory(workbookId, 1, 0);
+      const latestHistory = await getCommitHistory(workbookId, user.uid, 1, 0);
       const latestCommit = latestHistory.commits?.[0];
 
       if (
@@ -198,9 +354,7 @@ const Editor: React.FC = () => {
         latestCommit &&
         latestCommit.id !== baseCommitId
       ) {
-        setSyncStatus('error');
-        showToast('A newer version exists. Refresh or review history before saving.', 'warning');
-        return;
+        showToast('A newer version exists. Continuing save with cell-level conflict handling.', 'info');
       }
     } catch (versionCheckError) {
       console.warn('Could not verify latest commit before save:', versionCheckError);
@@ -226,17 +380,29 @@ const Editor: React.FC = () => {
         // This is a bit hacky, but history timeline refreshes on workbookId change or manual trigger
         // Since workbookId hasn't changed, we might need a refresh trigger in the timeline
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving workbook:', error);
       setSyncStatus('error');
-      showToast('Failed to save workbook', 'error');
+
+      // Handle server-side conflict blocking (409 PENDING_CONFLICTS_EXIST)
+      if (error.message?.includes('conflicts are pending') || error.message?.includes('PENDING_CONFLICTS_EXIST')) {
+        showToast('⚠️ Cannot save — pending conflicts must be resolved first.', 'warning');
+        // Re-hydrate conflicts from server in case we lost track
+        await hydratePendingConflicts();
+        setIsConflictViewerOpen(true);
+      } else {
+        showToast('Failed to save workbook', 'error');
+      }
     }
-  }, [id, user, showToast, showVersionHistory, conflicts.length, hasLocalEdits, baseCommitId]);
+  }, [id, user, showToast, showVersionHistory, conflicts.length, hasLocalEdits, baseCommitId, hydratePendingConflicts]);
 
   const handleCommitSelect = async (commit: Commit) => {
     setIsCommitDetailsLoading(true);
+    setComparisonDiffs([]);
+    setCompareBaseCommitId(null);
     try {
-      const details = await getCommitDetails(commit.id);
+      if (!user?.uid) return;
+      const details = await getCommitDetails(commit.id, user.uid);
       setSelectedCommitDetails(details);
     } catch (err) {
       console.error('Error fetching commit details:', err);
@@ -246,31 +412,59 @@ const Editor: React.FC = () => {
     }
   };
 
-  const handleResolveConflicts = (resolutionData: any) => {
+  const handleCompareCommits = async () => {
+    if (!id || !user?.uid || !selectedCommitDetails?.commit?.id) return;
+
+    try {
+      setIsComparisonLoading(true);
+      const diffResponse = await getWorkbookDiff(
+        parseInt(id, 10),
+        user.uid,
+        selectedCommitDetails.commit.id,
+        compareBaseCommitId ?? undefined
+      );
+      setComparisonDiffs(diffResponse.diffs || []);
+    } catch (compareError: any) {
+      console.error('Error comparing commits:', compareError);
+      showToast(compareError.message || 'Failed to compare commits', 'error');
+    } finally {
+      setIsComparisonLoading(false);
+    }
+  };
+
+  const handleResolveConflicts = async (resolutionData: any) => {
     console.log('Resolving conflicts:', resolutionData);
 
-    // Broadcast resolution via WebSocket so other collaborators are notified
     if (id && user && resolutionData) {
       // Loop through each resolved cell
-      Object.entries(resolutionData).forEach(([cellRef, data]: [string, any]) => {
+      for (const [cellRef, data] of Object.entries(resolutionData) as [string, any][]) {
         // Find the original conflict object to get its ID and cell coordinates
         const conflictObj = conflicts.find(c => c.cell === cellRef);
-        if (!conflictObj) return;
+        if (!conflictObj) continue;
 
         const { conflictId, cellData } = conflictObj;
         const { row, col, worksheetId } = cellData;
 
         // 1. Update the local Excel editor immediately
-        if (editorRef.current && worksheetId === activeWorksheetId) {
-          editorRef.current.updateCell(row, col, data.value);
+        if (editorRef.current) {
+          editorRef.current.updateCell(row, col, data.value, undefined, worksheetId, true);
         }
 
         // 2. Clear from local conflict state
         setConflicts(prev => prev.filter(c => c.conflictId !== conflictId));
 
-        // 3. Inform server+others
-        resolveConflict(conflictId, data.choice, data.value, user.uid, parseInt(id), cellData);
-      });
+        // 3. Persist resolution and broadcast from backend
+        await resolveWorkbookConflict(
+          parseInt(id, 10),
+          conflictId,
+          user.uid,
+          {
+            policy: 'manual',
+            resolution: data.choice,
+            resolvedValue: data.value,
+          }
+        );
+      }
     }
 
     showToast('Conflicts resolved successfully', 'success');
@@ -369,9 +563,9 @@ const Editor: React.FC = () => {
   };
 
   const handleWorksheetCreate = async () => {
-    if (!id) return;
+    if (!id || !user?.uid) return;
     try {
-      const newSheet = await createWorksheet(id, `Sheet${worksheets.length + 1}`, worksheets.length);
+      const newSheet = await createWorksheet(id, user.uid, `Sheet${worksheets.length + 1}`, worksheets.length);
       setWorksheets([...worksheets, {
         id: newSheet.id.toString(),
         name: newSheet.name,
@@ -386,9 +580,9 @@ const Editor: React.FC = () => {
   };
 
   const handleWorksheetRename = async (worksheetId: string, newName: string) => {
-    if (!id) return;
+    if (!id || !user?.uid) return;
     try {
-      await renameWorksheet(id, worksheetId, newName);
+      await renameWorksheet(id, worksheetId, user.uid, newName);
       setWorksheets(
         worksheets.map((ws) =>
           ws.id === worksheetId ? { ...ws, name: newName } : ws
@@ -402,9 +596,9 @@ const Editor: React.FC = () => {
   };
 
   const handleWorksheetDelete = async (worksheetId: string) => {
-    if (!id || worksheets.length <= 1) return;
+    if (!id || !user?.uid || worksheets.length <= 1) return;
     try {
-      await deleteWorksheet(id, worksheetId);
+      await deleteWorksheet(id, worksheetId, user.uid);
       const newWorksheets = worksheets.filter((ws) => ws.id !== worksheetId);
       setWorksheets(newWorksheets);
       if (activeWorksheetId === worksheetId) {
@@ -418,11 +612,11 @@ const Editor: React.FC = () => {
   };
 
   const handleWorksheetReorder = async (reorderedWorksheets: any[]) => {
-    if (!id) return;
+    if (!id || !user?.uid) return;
     try {
       setWorksheets(reorderedWorksheets);
       const orders = reorderedWorksheets.map((ws, index) => ({ id: ws.id, order: index }));
-      await reorderWorksheets(id, orders);
+      await reorderWorksheets(id, user.uid, orders);
       showToast('Sheets reordered', 'success');
     } catch (err) {
       console.error('Error reordering worksheets:', err);
@@ -543,14 +737,13 @@ const Editor: React.FC = () => {
       {/* Hybrid Sync Banner */}
       <HybridSyncBanner
         status={syncStatus}
-        onRetry={() => setIsConflictViewerOpen(true)}
+        onRetry={openConflictResolution}
       />
 
       {/* Conflict Notification Banner */}
       <ConflictNotificationBanner
         conflicts={conflicts}
-        onResolve={() => setIsConflictViewerOpen(true)}
-        onDismiss={() => setConflicts([])}
+        onResolve={openConflictResolution}
       />
 
       {/* Formula Bar */}
@@ -695,18 +888,95 @@ const Editor: React.FC = () => {
                     {!selectedCommitDetails ? (
                       <VersionHistoryTimeline
                         workbookId={parseInt(id)}
+                        requesterId={user?.uid || ''}
                         onCommitSelect={handleCommitSelect}
                       />
                     ) : (
                       <div className="flex flex-col h-full bg-white overflow-y-auto">
                         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
                           <button
-                            onClick={() => setSelectedCommitDetails(null)}
+                            onClick={() => {
+                              setSelectedCommitDetails(null);
+                              setComparisonDiffs([]);
+                              setCompareBaseCommitId(null);
+                            }}
                             className="text-blue-600 text-sm font-medium hover:underline"
                           >
                             &larr; Back to History
                           </button>
                         </div>
+                        <div className="p-4 border-b border-gray-100 bg-gray-50">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <select
+                              value={compareBaseCommitId ?? ''}
+                              onChange={(event) => {
+                                const nextValue = event.target.value;
+                                setCompareBaseCommitId(nextValue ? parseInt(nextValue, 10) : null);
+                              }}
+                              className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white"
+                            >
+                              <option value="">Compare against initial state</option>
+                              {commitHistory
+                                .filter((historyCommit) => historyCommit.id !== selectedCommitDetails.commit.id)
+                                .map((historyCommit) => (
+                                  <option key={historyCommit.id} value={historyCommit.id}>
+                                    {historyCommit.hash.substring(0, 8)} • {historyCommit.message || 'Auto-save'}
+                                  </option>
+                                ))}
+                            </select>
+                            <button
+                              onClick={handleCompareCommits}
+                              disabled={isComparisonLoading}
+                              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {isComparisonLoading ? 'Comparing...' : 'Compare Commits'}
+                            </button>
+                            {comparisonDiffs.length > 0 && (
+                              <button
+                                onClick={() => setComparisonDiffs([])}
+                                className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                              >
+                                Clear Comparison
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {comparisonDiffs.length > 0 && (
+                          <div className="p-4 border-b border-gray-100">
+                            <SemanticDiffSummary
+                              changes={comparisonDiffs.map((diff) => ({
+                                type:
+                                  diff.changeType === 'added'
+                                    ? 'cell_added'
+                                    : diff.changeType === 'deleted'
+                                      ? 'cell_deleted'
+                                      : diff.newFormula !== diff.oldFormula
+                                        ? 'formula_change'
+                                        : 'value_change',
+                                cellReference: diff.worksheetName
+                                  ? `${diff.worksheetName}!${diff.cellReference}`
+                                  : diff.cellReference,
+                                description: diff.description || 'Cell updated',
+                                impact: diff.changeType === 'deleted' ? 'high' : 'medium'
+                              }))}
+                            />
+                            <div className="mt-4">
+                              <DiffHighlighter
+                                diffs={comparisonDiffs.map((diff) => ({
+                                  cellReference: diff.worksheetName
+                                    ? `${diff.worksheetName}!${diff.cellReference}`
+                                    : diff.cellReference,
+                                  changeType: diff.changeType,
+                                  oldValue: diff.oldValue,
+                                  newValue: diff.newValue,
+                                  oldFormula: diff.oldFormula,
+                                  newFormula: diff.newFormula
+                                }))}
+                                viewMode="side-by-side"
+                              />
+                            </div>
+                          </div>
+                        )}
                         <CommitDetailViewer
                           commit={{
                             id: selectedCommitDetails.commit.id.toString(),
@@ -745,6 +1015,13 @@ const Editor: React.FC = () => {
             <ConflictResolutionViewer
               conflicts={conflicts.map((c: any) => {
                 const isTriggerer = user?.uid === c.user?.userId;
+                const collaboratorName = isTriggerer
+                  ? (c.conflictingUser?.userName || c.user?.userName || 'Collaborator')
+                  : (c.user?.userName || c.conflictingUser?.userName || 'Collaborator');
+                const collaboratorColor = isTriggerer
+                  ? (c.conflictingUser?.color || c.user?.color || '#FF0000')
+                  : (c.user?.color || c.conflictingUser?.color || '#FF0000');
+
                 return {
                   cellKey: c.cell,
                   cellReference: `${String.fromCharCode(65 + c.cellData.col)}${c.cellData.row + 1}`,
@@ -752,8 +1029,8 @@ const Editor: React.FC = () => {
                   yourFormula: isTriggerer ? c.cellData.formula : '', // Simplified for now
                   theirValue: isTriggerer ? c.conflictingValue : c.cellData.value,
                   theirFormula: isTriggerer ? '' : c.cellData.formula,
-                  theirUser: isTriggerer ? (c.conflictingUser?.userName || 'Collaborator') : (c.user?.userName || 'Collaborator'),
-                  theirColor: isTriggerer ? (c.conflictingUser?.color || '#FF0000') : (c.user?.color || '#FF0000')
+                  theirUser: collaboratorName,
+                  theirColor: collaboratorColor
                 };
               })}
               onResolve={handleResolveConflicts}
@@ -789,7 +1066,8 @@ const Editor: React.FC = () => {
           onPreview={async (cid) => {
             showToast(`Loading preview for version ${cid}...`, 'info');
             try {
-              const snapshot = await getCommitSnapshot(cid);
+              if (!user?.uid) return;
+              const snapshot = await getCommitSnapshot(cid, user.uid);
               setWorkbookData(snapshot);
               setIsRollbackModalOpen(false);
               showToast('Preview loaded. Click "Confirm Rollback" to make this permanent.', 'info');

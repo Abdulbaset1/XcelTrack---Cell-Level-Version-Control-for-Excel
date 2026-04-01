@@ -14,6 +14,8 @@ import { MdDashboard, MdSettings } from 'react-icons/md';
 import { getAdminStats, getRecentActivity, AdminStats, RecentActivityCommit } from '../services/api';
 
 const AdminDashboard: React.FC = () => {
+    const { logout, user } = useAuth();
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<'overview' | 'commits' | 'users' | 'settings' | 'profile' | 'logs' | 'analytics'>('overview');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [recentCommits, setRecentCommits] = useState<RecentActivityCommit[]>([]);
@@ -24,10 +26,11 @@ const AdminDashboard: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
 
     const fetchDashboardData = useCallback(async () => {
+        if (!user?.uid) return;
         try {
             const [statsData, activityData] = await Promise.all([
-                getAdminStats(),
-                getRecentActivity(10),
+                getAdminStats(user.uid),
+                getRecentActivity(user.uid, 10),
             ]);
             setStats(statsData);
             setRecentCommits(activityData.commits);
@@ -39,7 +42,7 @@ const AdminDashboard: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user?.uid]);
 
     // Initial fetch + 30 second auto-refresh
     useEffect(() => {
@@ -51,9 +54,6 @@ const AdminDashboard: React.FC = () => {
     const toggleSidebar = () => {
         setSidebarOpen(!sidebarOpen);
     };
-
-    const { logout, user } = useAuth();
-    const navigate = useNavigate();
 
     const handleSignOut = async () => {
         try {

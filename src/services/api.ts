@@ -19,7 +19,7 @@ export const uploadWorkbook = async (file: File, ownerId: string) => {
 };
 
 export const getWorkbooks = async (ownerId: string) => {
-    const response = await fetch(`${API_URL}/workbooks?owner_id=${ownerId}`);
+    const response = await fetch(`${API_URL}/workbooks?owner_id=${ownerId}&requester_id=${ownerId}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to fetch workbooks');
@@ -35,8 +35,8 @@ export interface RegisteredUser {
     created_at?: string;
 }
 
-export const getRegisteredUsers = async (): Promise<RegisteredUser[]> => {
-    const response = await fetch(`${API_URL}/users`);
+export const getRegisteredUsers = async (requesterId: string): Promise<RegisteredUser[]> => {
+    const response = await fetch(`${API_URL}/users?requester_id=${requesterId}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to fetch users');
@@ -63,6 +63,49 @@ export const addWorkbookCollaborator = async (
     return response.json();
 };
 
+export interface WorkbookCollaborator {
+    id: number;
+    user_id: string;
+    added_by: string;
+    added_at: string;
+    name: string;
+    email: string;
+    role?: string;
+}
+
+export const getWorkbookCollaborators = async (
+    workbookId: string | number,
+    requesterId: string
+): Promise<{ collaborators: WorkbookCollaborator[] }> => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}/collaborators?requester_id=${requesterId}`);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch collaborators');
+    }
+
+    return response.json();
+};
+
+export const removeWorkbookCollaborator = async (
+    workbookId: string | number,
+    requesterId: string,
+    collaboratorId: string
+) => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}/collaborators/${collaboratorId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to remove collaborator');
+    }
+
+    return response.json();
+};
+
 export const deleteWorkbook = async (workbookId: string | number, requesterId: string) => {
     const response = await fetch(`${API_URL}/workbooks/${workbookId}?requester_id=${requesterId}`, {
         method: 'DELETE',
@@ -76,8 +119,8 @@ export const deleteWorkbook = async (workbookId: string | number, requesterId: s
     return response.json();
 };
 
-export const getWorkbookData = async (workbookId: string) => {
-    const response = await fetch(`${API_URL}/workbooks/${workbookId}`);
+export const getWorkbookData = async (workbookId: string, requesterId: string) => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}?requester_id=${requesterId}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to fetch workbook data');
@@ -85,8 +128,8 @@ export const getWorkbookData = async (workbookId: string) => {
     return response.json();
 };
 
-export const downloadWorkbook = async (workbookId: string, fileName: string) => {
-    const response = await fetch(`${API_URL}/workbooks/${workbookId}/download`);
+export const downloadWorkbook = async (workbookId: string, fileName: string, requesterId: string) => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}/download?requester_id=${requesterId}`);
     if (!response.ok) {
         throw new Error('Failed to download workbook');
     }
@@ -128,6 +171,41 @@ export interface CellChange {
     style: any;
 }
 
+export interface CommitDiff {
+    cellReference: string;
+    worksheetName?: string;
+    changeType: 'added' | 'modified' | 'deleted';
+    oldValue?: string;
+    newValue?: string;
+    oldFormula?: string;
+    newFormula?: string;
+    description?: string;
+}
+
+export interface WorkbookDiffResponse {
+    workbook_id: number;
+    base_commit: number | 'initial';
+    head_commit: number;
+    diffs: CommitDiff[];
+}
+
+export interface WorkbookConflict {
+    id: number;
+    workbook_id: number;
+    worksheet_id: number;
+    row_idx: number;
+    col_idx: number;
+    user1_id: string;
+    user1_value: string | null;
+    user2_id: string;
+    user2_value: string | null;
+    status: 'pending' | 'resolved';
+    resolved_by?: string;
+    resolution?: string;
+    created_at: string;
+    resolved_at?: string;
+}
+
 export interface CommitDetails {
     commit: Commit;
     changes: CellChange[];
@@ -159,8 +237,8 @@ export const createCommit = async (
 };
 
 // Get commit history for a workbook
-export const getCommitHistory = async (workbook_id: number, limit: number = 50, offset: number = 0): Promise<{ commits: Commit[] }> => {
-    const response = await fetch(`${API_URL}/workbooks/${workbook_id}/commits?limit=${limit}&offset=${offset}`);
+export const getCommitHistory = async (workbook_id: number, requesterId: string, limit: number = 50, offset: number = 0): Promise<{ commits: Commit[] }> => {
+    const response = await fetch(`${API_URL}/workbooks/${workbook_id}/commits?requester_id=${requesterId}&limit=${limit}&offset=${offset}`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -171,8 +249,8 @@ export const getCommitHistory = async (workbook_id: number, limit: number = 50, 
 };
 
 // Get all commits for a user (Global Activity)
-export const getUserCommits = async (userId: string, limit: number = 50, offset: number = 0): Promise<{ commits: (Commit & { workbook_name: string })[] }> => {
-    const response = await fetch(`${API_URL}/commits?user_id=${userId}&limit=${limit}&offset=${offset}`);
+export const getUserCommits = async (userId: string, requesterId: string, limit: number = 50, offset: number = 0): Promise<{ commits: (Commit & { workbook_name: string })[] }> => {
+    const response = await fetch(`${API_URL}/commits?user_id=${userId}&requester_id=${requesterId}&limit=${limit}&offset=${offset}`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -183,8 +261,8 @@ export const getUserCommits = async (userId: string, limit: number = 50, offset:
 };
 
 // Get detailed commit information
-export const getCommitDetails = async (commit_id: number): Promise<CommitDetails> => {
-    const response = await fetch(`${API_URL}/commits/${commit_id}`);
+export const getCommitDetails = async (commit_id: number, requesterId: string): Promise<CommitDetails> => {
+    const response = await fetch(`${API_URL}/commits/${commit_id}?requester_id=${requesterId}`);
 
     if (!response.ok) {
         const error = await response.json();
@@ -194,9 +272,86 @@ export const getCommitDetails = async (commit_id: number): Promise<CommitDetails
     return response.json();
 };
 
+export const getWorkbookDiff = async (
+    workbookId: number,
+    requesterId: string,
+    headCommitId: number,
+    baseCommitId?: number
+): Promise<WorkbookDiffResponse> => {
+    const baseQuery = baseCommitId ? `&base=${baseCommitId}` : '';
+    const response = await fetch(
+        `${API_URL}/workbooks/${workbookId}/diff?requester_id=${requesterId}&head=${headCommitId}${baseQuery}`
+    );
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch workbook diff');
+    }
+
+    return response.json();
+};
+
+export const getWorkbookConflicts = async (
+    workbookId: number,
+    requesterId: string,
+    status: 'pending' | 'resolved' | 'all' = 'pending'
+): Promise<{ conflicts: WorkbookConflict[] }> => {
+    const response = await fetch(
+        `${API_URL}/workbooks/${workbookId}/conflicts?requester_id=${requesterId}&status=${status}`
+    );
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch workbook conflicts');
+    }
+
+    return response.json();
+};
+
+export const resolveWorkbookConflict = async (
+    workbookId: number,
+    conflictId: number,
+    requesterId: string,
+    payload: {
+        policy?: 'manual' | 'last-writer-wins';
+        resolution?: string;
+        resolvedValue?: string;
+    }
+) => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}/conflicts/${conflictId}/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, ...payload }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to resolve conflict');
+    }
+
+    return response.json();
+};
+
+// Lightweight check for pending conflicts
+export const hasConflicts = async (
+    workbookId: number,
+    requesterId: string
+): Promise<{ hasConflicts: boolean; pendingCount: number }> => {
+    const response = await fetch(
+        `${API_URL}/workbooks/${workbookId}/has-conflicts?requester_id=${requesterId}`
+    );
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to check conflicts');
+    }
+
+    return response.json();
+};
+
 // Get a full snapshot of the workbook at a specific commit
-export const getCommitSnapshot = async (commit_id: number) => {
-    const response = await fetch(`${API_URL}/commits/${commit_id}/snapshot`);
+export const getCommitSnapshot = async (commit_id: number, requesterId: string) => {
+    const response = await fetch(`${API_URL}/commits/${commit_id}/snapshot?requester_id=${requesterId}`);
     if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         throw new Error(error.error || 'Failed to fetch commit snapshot');
@@ -209,7 +364,7 @@ export const rollbackToCommit = async (workbook_id: number, commit_id: number, u
     const response = await fetch(`${API_URL}/workbooks/${workbook_id}/rollback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commit_id, user_id }),
+        body: JSON.stringify({ commit_id, user_id, requester_id: user_id }),
     });
 
     if (!response.ok) {
@@ -224,41 +379,55 @@ export const rollbackToCommit = async (workbook_id: number, commit_id: number, u
 // WORKSHEET MANAGEMENT API
 // ============================================
 
-export const createWorksheet = async (workbookId: string, name: string, order: number) => {
+export const createWorksheet = async (workbookId: string, requesterId: string, name: string, order: number) => {
     const response = await fetch(`${API_URL}/workbooks/${workbookId}/sheets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, order }),
+        body: JSON.stringify({ requester_id: requesterId, name, order }),
     });
-    if (!response.ok) throw new Error('Failed to create worksheet');
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create worksheet');
+    }
     return response.json();
 };
 
-export const renameWorksheet = async (workbookId: string, sheetId: string, name: string) => {
+export const renameWorksheet = async (workbookId: string, sheetId: string, requesterId: string, name: string) => {
     const response = await fetch(`${API_URL}/workbooks/${workbookId}/sheets/${sheetId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ requester_id: requesterId, name }),
     });
-    if (!response.ok) throw new Error('Failed to rename worksheet');
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to rename worksheet');
+    }
     return response.json();
 };
 
-export const deleteWorksheet = async (workbookId: string, sheetId: string) => {
+export const deleteWorksheet = async (workbookId: string, sheetId: string, requesterId: string) => {
     const response = await fetch(`${API_URL}/workbooks/${workbookId}/sheets/${sheetId}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId }),
     });
-    if (!response.ok) throw new Error('Failed to delete worksheet');
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete worksheet');
+    }
     return response.json();
 };
 
-export const reorderWorksheets = async (workbookId: string, orders: { id: string; order: number }[]) => {
+export const reorderWorksheets = async (workbookId: string, requesterId: string, orders: { id: string; order: number }[]) => {
     const response = await fetch(`${API_URL}/workbooks/${workbookId}/sheets/reorder`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orders }),
+        body: JSON.stringify({ requester_id: requesterId, orders }),
     });
-    if (!response.ok) throw new Error('Failed to reorder worksheets');
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to reorder worksheets');
+    }
     return response.json();
 };
 
@@ -311,26 +480,116 @@ export interface AdminAnalytics {
     recentAuditLogs: AuditLog[];
 }
 
-export const getAdminStats = async (): Promise<AdminStats> => {
-    const response = await fetch(`${API_URL}/admin/stats`);
+export interface InAppNotification {
+    id: number;
+    user_id: string;
+    type: 'info' | 'success' | 'warning' | 'error';
+    title: string;
+    message: string;
+    metadata?: any;
+    is_read: boolean;
+    created_at: string;
+}
+
+export const getAdminStats = async (requesterId: string): Promise<AdminStats> => {
+    const response = await fetch(`${API_URL}/admin/stats?requester_id=${requesterId}`);
     if (!response.ok) throw new Error('Failed to fetch admin stats');
     return response.json();
 };
 
-export const getRecentActivity = async (limit: number = 20): Promise<{ commits: RecentActivityCommit[] }> => {
-    const response = await fetch(`${API_URL}/admin/recent-activity?limit=${limit}`);
+export const getRecentActivity = async (requesterId: string, limit: number = 20): Promise<{ commits: RecentActivityCommit[] }> => {
+    const response = await fetch(`${API_URL}/admin/recent-activity?requester_id=${requesterId}&limit=${limit}`);
     if (!response.ok) throw new Error('Failed to fetch recent activity');
     return response.json();
 };
 
-export const getAuditLogs = async (limit: number = 100, offset: number = 0): Promise<{ logs: AuditLog[] }> => {
-    const response = await fetch(`${API_URL}/admin/audit-logs?limit=${limit}&offset=${offset}`);
+export interface AuditLogFilters {
+    action?: string;
+    user?: string;
+    from?: string;
+    to?: string;
+}
+
+export const getAuditLogs = async (
+    requesterId: string,
+    limit: number = 100,
+    offset: number = 0,
+    filters: AuditLogFilters = {}
+): Promise<{ logs: AuditLog[]; total: number }> => {
+    const params = new URLSearchParams({
+        requester_id: requesterId,
+        limit: String(limit),
+        offset: String(offset),
+    });
+
+    if (filters.action) params.set('action', filters.action);
+    if (filters.user) params.set('user', filters.user);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+
+    const response = await fetch(`${API_URL}/admin/audit-logs?${params.toString()}`);
     if (!response.ok) throw new Error('Failed to fetch audit logs');
     return response.json();
 };
 
-export const getAdminAnalytics = async (): Promise<AdminAnalytics> => {
-    const response = await fetch(`${API_URL}/admin/analytics`);
+export const getAuditLogsExportUrl = (
+    requesterId: string,
+    format: 'csv' | 'json' = 'csv',
+    filters: AuditLogFilters = {}
+) => {
+    const params = new URLSearchParams({ requester_id: requesterId, format });
+    if (filters.action) params.set('action', filters.action);
+    if (filters.user) params.set('user', filters.user);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    return `${API_URL}/admin/audit-logs/export?${params.toString()}`;
+};
+
+export const getAdminAnalytics = async (requesterId: string): Promise<AdminAnalytics> => {
+    const response = await fetch(`${API_URL}/admin/analytics?requester_id=${requesterId}`);
     if (!response.ok) throw new Error('Failed to fetch analytics');
+    return response.json();
+};
+
+export const getNotifications = async (
+    requesterId: string,
+    limit: number = 50,
+    offset: number = 0,
+    unreadOnly: boolean = false
+): Promise<{ notifications: InAppNotification[] }> => {
+    const response = await fetch(
+        `${API_URL}/notifications?requester_id=${requesterId}&limit=${limit}&offset=${offset}&unreadOnly=${unreadOnly}`
+    );
+    if (!response.ok) throw new Error('Failed to fetch notifications');
+    return response.json();
+};
+
+export const markNotificationRead = async (requesterId: string, notificationId: number) => {
+    const response = await fetch(`${API_URL}/notifications/${notificationId}/read`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId }),
+    });
+    if (!response.ok) throw new Error('Failed to mark notification as read');
+    return response.json();
+};
+
+export const markAllNotificationsRead = async (requesterId: string) => {
+    const response = await fetch(`${API_URL}/notifications/read-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId }),
+    });
+    if (!response.ok) throw new Error('Failed to mark all notifications as read');
+    return response.json();
+};
+
+export const clearNotification = async (requesterId: string, notificationId: number) => {
+    const response = await fetch(`${API_URL}/notifications/${notificationId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId }),
+    });
+    if (!response.ok) throw new Error('Failed to clear notification');
     return response.json();
 };

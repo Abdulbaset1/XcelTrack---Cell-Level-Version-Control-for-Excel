@@ -20,6 +20,7 @@ class DiffEngine {
             // Initial commit case: everything is "added"
             return headVersions.map(v => ({
                 cellReference: v.address,
+                worksheetName: v.worksheet_name,
                 changeType: 'added',
                 newValue: v.value,
                 newFormula: v.formula,
@@ -40,6 +41,7 @@ class DiffEngine {
             if (!baseV) {
                 diffs.push({
                     cellReference: headV.address,
+                    worksheetName: headV.worksheet_name,
                     changeType: 'added',
                     newValue: headV.value,
                     newFormula: headV.formula,
@@ -48,6 +50,7 @@ class DiffEngine {
             } else if (baseV.value !== headV.value || baseV.formula !== headV.formula) {
                 diffs.push({
                     cellReference: headV.address,
+                    worksheetName: headV.worksheet_name,
                     changeType: 'modified',
                     oldValue: baseV.value,
                     newValue: headV.value,
@@ -63,6 +66,7 @@ class DiffEngine {
             if (!headMap.has(key)) {
                 diffs.push({
                     cellReference: baseV.address,
+                    worksheetName: baseV.worksheet_name,
                     changeType: 'deleted',
                     oldValue: baseV.value,
                     oldFormula: baseV.formula,
@@ -76,9 +80,10 @@ class DiffEngine {
 
     async getCommitCellVersions(commitId) {
         const query = `
-            SELECT cv.*, c.address, c.row_idx, c.col_idx, c.worksheet_id 
+            SELECT cv.*, c.address, c.row_idx, c.col_idx, c.worksheet_id, w.name as worksheet_name
             FROM cell_versions cv
             JOIN cells c ON cv.cell_id = c.id
+            JOIN worksheets w ON c.worksheet_id = w.id
             WHERE cv.commit_id = $1
         `;
         const result = await this.pool.query(query, [commitId]);

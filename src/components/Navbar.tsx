@@ -1,19 +1,103 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiSun, FiMoon, FiBell } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useWebSocket } from '../contexts/WebSocketContext';
+import NotificationDropdown, { NotificationItem } from './NotificationDropdown';
+import {
+  InAppNotification,
+  clearNotification,
+  getNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '../services/api';
 
 interface NavbarProps {
   toggleSidebar: () => void;
   isSidebarOpen: boolean;
 }
 
+interface RealtimeNotificationEvent {
+  id?: number;
+  user_id?: string;
+  type?: NotificationItem['type'];
+  title: string;
+  message: string;
+  metadata?: any;
+  is_read?: boolean;
+  created_at?: string;
+  createdAt?: string;
+}
+
 const Navbar: React.FC<NavbarProps> = ({ toggleSidebar, isSidebarOpen }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [isNotificationsLoading, setIsNotificationsLoading] = useState(false);
   const { user, logout } = useAuth();
+  const { socket } = useWebSocket();
   const navigate = useNavigate();
   const { toggleTheme, isDark } = useTheme();
+
+  const mapNotification = (item: InAppNotification): NotificationItem => ({
+    id: String(item.id),
+    type: (item.type as NotificationItem['type']) || 'info',
+    title: item.title,
+    message: item.message,
+    timestamp: item.created_at,
+    read: item.is_read,
+  });
+
+  const loadNotifications = useCallback(async () => {
+    if (!user?.uid) return;
+    try {
+      setIsNotificationsLoading(true);
+      const feed = await getNotifications(user.uid, 30, 0, false);
+      setNotifications(feed.notifications.map(mapNotification));
+    } catch (error) {
+      console.error('Failed to load notifications:', error);
+    } finally {
+      setIsNotificationsLoading(false);
+    }
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    loadNotifications();
+    const intervalId = window.setInterval(loadNotifications, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [loadNotifications, user?.uid]);
+
+  useEffect(() => {
+    if (!socket || !user?.uid) return;
+
+    socket.emit('join-user-channel', { userId: user.uid });
+
+    const handleRealtimeNotification = (event: RealtimeNotificationEvent) => {
+      const incomingNotification: NotificationItem = {
+        id: event.id ? String(event.id) : `ws-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        type: event.type || 'info',
+        title: event.title,
+        message: event.message,
+        timestamp: event.created_at || event.createdAt || new Date().toISOString(),
+        read: event.is_read ?? false,
+      };
+
+      setNotifications((previous) => {
+        const alreadyExists = previous.some((notification) => notification.id === incomingNotification.id);
+        if (alreadyExists) return previous;
+        return [incomingNotification, ...previous].slice(0, 50);
+      });
+    };
+
+    socket.on('notification:new', handleRealtimeNotification);
+
+    return () => {
+      socket.off('notification:new', handleRealtimeNotification);
+      socket.emit('leave-user-channel', { userId: user.uid });
+    };
+  }, [socket, user?.uid]);
 
   const getInitials = (name: string) => {
     return name
@@ -30,6 +114,54 @@ const Navbar: React.FC<NavbarProps> = ({ toggleSidebar, isSidebarOpen }) => {
       navigate('/');
     } catch (error) {
       console.error('Failed to sign out', error);
+    }
+  };
+
+  const handleNotificationClick = () => {
+    setIsNotificationOpen(!isNotificationOpen);
+    setIsProfileOpen(false);
+
+    if (!isNotificationOpen && user?.uid) {
+      loadNotifications();
+    }
+  };
+
+  const unreadCount = notifications.filter(notification => !notification.read).length;
+
+  const handleNotificationMarkAsRead = async (id: string) => {
+    if (!user?.uid) return;
+    try {
+      await markNotificationRead(user.uid, Number(id));
+      setNotifications((previous) => previous.map((notification) => (
+        notification.id === id
+          ? { ...notification, read: true }
+          : notification
+      )));
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    if (!user?.uid) return;
+    try {
+      await markAllNotificationsRead(user.uid);
+      setNotifications((previous) => previous.map((notification) => ({
+        ...notification,
+        read: true,
+      })));
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+    }
+  };
+
+  const handleClearNotification = async (id: string) => {
+    if (!user?.uid) return;
+    try {
+      await clearNotification(user.uid, Number(id));
+      setNotifications((previous) => previous.filter((notification) => notification.id !== id));
+    } catch (error) {
+      console.error('Failed to clear notification:', error);
     }
   };
 
@@ -64,13 +196,31 @@ const Navbar: React.FC<NavbarProps> = ({ toggleSidebar, isSidebarOpen }) => {
           </button>
 
           {/* Notifications - Bell Icon */}
-          <button
-            className="relative p-2 text-[#535F80] hover:text-sapphire-600 transition-colors"
-            aria-label="Notifications"
-          >
-            <FiBell size={20} />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-          </button>
+          <div className="relative">
+            <button
+              onClick={handleNotificationClick}
+              className="relative p-2 text-[#535F80] hover:text-sapphire-600 transition-colors"
+              aria-label="Notifications"
+              aria-expanded={isNotificationOpen}
+              aria-haspopup="true"
+            >
+              <FiBell size={20} />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+              )}
+            </button>
+
+            {isNotificationOpen && (
+              <NotificationDropdown
+                notifications={notifications}
+                unreadCount={unreadCount}
+                onMarkAsRead={handleNotificationMarkAsRead}
+                onMarkAllAsRead={handleMarkAllAsRead}
+                onClearNotification={handleClearNotification}
+                loading={isNotificationsLoading}
+              />
+            )}
+          </div>
 
           {/* Profile Dropdown */}
           <div className="relative">
