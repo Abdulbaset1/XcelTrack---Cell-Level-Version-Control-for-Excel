@@ -476,7 +476,10 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
             if (range) {
                 suppressCellChangeRef.current = silent;
                 try {
-                    range.setValue(formula ?? value);
+                    const nextValue = (typeof formula === 'string' && formula.length > 0)
+                        ? formula
+                        : value;
+                    range.setValue(nextValue ?? '');
                 } finally {
                     suppressCellChangeRef.current = false;
                 }
