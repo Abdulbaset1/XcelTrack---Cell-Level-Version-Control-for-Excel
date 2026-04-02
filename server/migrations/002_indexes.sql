@@ -1,0 +1,18 @@
+CREATE INDEX IF NOT EXISTS idx_workbooks_owner_id ON workbooks(owner_id);
+CREATE INDEX IF NOT EXISTS idx_workbooks_updated_at ON workbooks(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workbook_collaborators_workbook_id ON workbook_collaborators(workbook_id);
+CREATE INDEX IF NOT EXISTS idx_workbook_collaborators_user_id ON workbook_collaborators(user_id);
+CREATE INDEX IF NOT EXISTS idx_worksheets_workbook_id ON worksheets(workbook_id);
+CREATE INDEX IF NOT EXISTS idx_cells_worksheet_id ON cells(worksheet_id);
+CREATE INDEX IF NOT EXISTS idx_cells_row_col ON cells(worksheet_id, row_idx, col_idx);
+CREATE INDEX IF NOT EXISTS idx_commits_workbook_id ON commits(workbook_id);
+CREATE INDEX IF NOT EXISTS idx_commits_timestamp ON commits(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_commits_workbook_timestamp ON commits(workbook_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_cell_versions_commit_id ON cell_versions(commit_id);
+CREATE INDEX IF NOT EXISTS idx_cell_versions_cell_id ON cell_versions(cell_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_verifications(email);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);

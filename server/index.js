@@ -8,6 +8,7 @@ require('dotenv').config();
 const multer = require('multer');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 
 // Import optimization modules
@@ -386,6 +387,55 @@ const toCellAddress = (row, col) => {
     return `${colLetters}${Number(row) + 1}`;
 };
 
+const parsePagination = (limitRaw, offsetRaw, defaultLimit = null, maxLimit = 200) => {
+    const hasLimit = limitRaw !== undefined && limitRaw !== null && limitRaw !== '';
+    const hasOffset = offsetRaw !== undefined && offsetRaw !== null && offsetRaw !== '';
+
+    const parsedLimit = hasLimit ? parseInt(limitRaw, 10) : defaultLimit;
+    const parsedOffset = hasOffset ? parseInt(offsetRaw, 10) : 0;
+
+    if (parsedLimit !== null && (Number.isNaN(parsedLimit) || parsedLimit <= 0)) {
+        return { error: 'limit must be a positive integer' };
+    }
+    if (Number.isNaN(parsedOffset) || parsedOffset < 0) {
+        return { error: 'offset must be a non-negative integer' };
+    }
+
+    const effectiveLimit = parsedLimit === null ? null : Math.min(parsedLimit, maxLimit);
+    return {
+        limit: effectiveLimit,
+        offset: parsedOffset,
+        hasPagination: hasLimit || hasOffset,
+    };
+};
+
+const persistUploadedFile = async (file) => {
+    const storageMode = (process.env.UPLOAD_STORAGE_MODE || 'db').toLowerCase();
+    if (!['db', 'local', 'both'].includes(storageMode)) {
+        throw new Error('Invalid UPLOAD_STORAGE_MODE. Expected db, local, or both');
+    }
+
+    const shouldWriteLocal = storageMode === 'local' || storageMode === 'both';
+    if (!shouldWriteLocal) {
+        return { mode: storageMode, localPath: null };
+    }
+
+    const uploadsDir = process.env.UPLOADS_DIR
+        ? path.resolve(process.env.UPLOADS_DIR)
+        : path.resolve(__dirname, 'uploads');
+
+    await fs.promises.mkdir(uploadsDir, { recursive: true });
+    const safeName = (file.originalname || 'upload.xlsx').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const stampedName = `${Date.now()}-${safeName}`;
+    const absolutePath = path.join(uploadsDir, stampedName);
+    await fs.promises.writeFile(absolutePath, file.buffer);
+
+    return {
+        mode: storageMode,
+        localPath: absolutePath,
+    };
+};
+
 const getRequesterId = (req) => {
     return (
         req.headers['x-user-id'] ||
@@ -507,7 +557,7 @@ const requireWorkbookOwnerOrAdmin = (req, res, next) => {
 
 const loadCommitAccess = async (req, res, next) => {
     try {
-        const commitId = parseInt(req.params.id, 10);
+        const commitId = parseInt(req.params.id || req.params.commitId, 10);
         if (!commitId || Number.isNaN(commitId)) {
             return res.status(400).json({ error: 'Valid commit ID is required', code: 'INVALID_COMMIT_ID' });
         }
@@ -541,6 +591,54 @@ const loadCommitAccess = async (req, res, next) => {
     } catch (error) {
         logger.error('Failed loading commit access', { error: error.message, requesterId: req.requesterId });
         res.status(500).json({ error: 'Failed to evaluate commit access' });
+    }
+};
+
+const loadCellAccess = async (req, res, next) => {
+    try {
+        const cellId = parseInt(req.params.cellId, 10);
+        if (!cellId || Number.isNaN(cellId)) {
+            return res.status(400).json({ error: 'Valid cell ID is required', code: 'INVALID_CELL_ID' });
+        }
+
+        const cellResult = await pool.query(
+            `SELECT c.id, c.worksheet_id, w.id as workbook_id, w.owner_id,
+                    CASE WHEN wc.user_id IS NOT NULL THEN true ELSE false END as is_collaborator
+             FROM cells c
+             JOIN worksheets ws ON ws.id = c.worksheet_id
+             JOIN workbooks w ON w.id = ws.workbook_id
+             LEFT JOIN workbook_collaborators wc
+                ON wc.workbook_id = w.id AND wc.user_id = $2
+             WHERE c.id = $1`,
+            [cellId, req.requesterId]
+        );
+
+        if (cellResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Cell not found', code: 'CELL_NOT_FOUND' });
+        }
+
+        const cell = cellResult.rows[0];
+        const isOwner = cell.owner_id === req.requesterId;
+        const isCollaborator = cell.is_collaborator === true;
+        const isAdmin = req.requesterRole === 'admin';
+
+        if (!(isOwner || isCollaborator || isAdmin)) {
+            return res.status(403).json({ error: 'Access denied for cell history', code: 'CELL_HISTORY_FORBIDDEN' });
+        }
+
+        req.cellAccess = {
+            cellId,
+            worksheetId: cell.worksheet_id,
+            workbookId: cell.workbook_id,
+            isOwner,
+            isCollaborator,
+            isAdmin,
+        };
+
+        next();
+    } catch (error) {
+        logger.error('Failed loading cell access', { error: error.message, requesterId: req.requesterId });
+        res.status(500).json({ error: 'Failed to evaluate cell access' });
     }
 };
 
@@ -914,6 +1012,14 @@ app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), requireR
         return res.status(400).json({ error: validation.errors.join(', ') });
     }
 
+    let storageInfo = { mode: (process.env.UPLOAD_STORAGE_MODE || 'db').toLowerCase(), localPath: null };
+    try {
+        storageInfo = await persistUploadedFile(file);
+    } catch (storageError) {
+        logger.error('Failed to persist uploaded file', { error: storageError.message, owner_id, fileName: file.originalname });
+        return res.status(500).json({ error: 'Failed to store uploaded file' });
+    }
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -983,6 +1089,10 @@ app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), requireR
                 totalSheets: parsedData.totalSheets,
                 totalCells: parsedData.totalCells,
             },
+            storage: {
+                mode: storageInfo.mode,
+                localPath: storageInfo.localPath,
+            },
         });
 
     } catch (error) {
@@ -1001,7 +1111,7 @@ app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), requireR
 
 // Get User's Workbooks
 app.get('/api/workbooks', generalLimiter, requireRequester, async (req, res) => {
-    const { owner_id } = req.query;
+    const { owner_id, limit, offset } = req.query;
     if (!owner_id) {
         return res.status(400).json({ error: 'owner_id is required' });
     }
@@ -1010,18 +1120,22 @@ app.get('/api/workbooks', generalLimiter, requireRequester, async (req, res) => 
         return res.status(403).json({ error: 'You can only fetch your own workbooks', code: 'OWNER_QUERY_FORBIDDEN' });
     }
 
+    const pagination = parsePagination(limit, offset, null, 200);
+    if (pagination.error) {
+        return res.status(400).json({ error: pagination.error, code: 'INVALID_PAGINATION' });
+    }
+
     try {
-        // Check cache first
+        // Check cache first (only when no pagination params are provided)
         const cacheKey = cache.userWorkbooksKey(owner_id);
-        const cachedWorkbooks = await cache.get(cacheKey);
+        const cachedWorkbooks = pagination.hasPagination ? null : await cache.get(cacheKey);
 
         if (cachedWorkbooks) {
             logger.info('Workbooks retrieved from cache', { owner_id });
             return res.json(cachedWorkbooks);
         }
 
-        const result = await pool.query(
-            `SELECT
+        const baseQuery = `SELECT
                 w.*,
                 CASE WHEN w.owner_id = $1 THEN true ELSE false END as is_owner,
                 COALESCE(cstats.collaborator_count, 0) as collaborator_count,
@@ -1040,12 +1154,21 @@ app.get('/api/workbooks', generalLimiter, requireRequester, async (req, res) => 
                     FROM workbook_collaborators
                     WHERE user_id = $1
                 )
-             ORDER BY w.updated_at DESC`,
-            [owner_id]
-        );
+             ORDER BY w.updated_at DESC`;
 
-        // Cache the result
-        await cache.set(cacheKey, result.rows, 120); // 2 minutes TTL
+        const queryText = pagination.limit === null
+            ? baseQuery
+            : `${baseQuery} LIMIT $2 OFFSET $3`;
+        const queryParams = pagination.limit === null
+            ? [owner_id]
+            : [owner_id, pagination.limit, pagination.offset];
+
+        const result = await pool.query(queryText, queryParams);
+
+        // Cache only unpaginated result
+        if (!pagination.hasPagination) {
+            await cache.set(cacheKey, result.rows, 120); // 2 minutes TTL
+        }
 
         res.json(result.rows);
     } catch (error) {
@@ -2030,6 +2153,125 @@ app.get('/api/admin/analytics', requireRequester, requireAdmin, async (req, res)
 // VERSION CONTROL ENDPOINTS
 // ============================================
 
+const fetchWorkbookCommitHistory = async (workbookId, limitRaw, offsetRaw) => {
+    const pagination = parsePagination(limitRaw, offsetRaw, 50, 200);
+    if (pagination.error) {
+        const error = new Error(pagination.error);
+        error.code = 'INVALID_PAGINATION';
+        throw error;
+    }
+
+    const result = await pool.query(
+        `SELECT 
+            c.id,
+            c.message,
+            c.user_id,
+            c.timestamp,
+            c.hash,
+            COUNT(cv.id) as changes_count
+         FROM commits c
+         LEFT JOIN cell_versions cv ON c.id = cv.commit_id
+         WHERE c.workbook_id = $1
+         GROUP BY c.id
+         ORDER BY c.timestamp DESC
+         LIMIT $2 OFFSET $3`,
+        [workbookId, pagination.limit, pagination.offset]
+    );
+
+    return result.rows;
+};
+
+const fetchCommitDetails = async (commitId) => {
+    const commitResult = await pool.query('SELECT * FROM commits WHERE id = $1', [commitId]);
+    if (commitResult.rows.length === 0) {
+        const error = new Error('Commit not found');
+        error.code = 'COMMIT_NOT_FOUND';
+        throw error;
+    }
+
+    const commit = commitResult.rows[0];
+    const changesResult = await pool.query(
+        `SELECT 
+            cc.*,
+            c.address,
+            c.row_idx,
+            c.col_idx,
+            w.name as worksheet_name
+         FROM commit_changes cc
+         JOIN cells c ON cc.cell_id = c.id
+         JOIN worksheets w ON c.worksheet_id = w.id
+         WHERE cc.commit_id = $1
+         ORDER BY w.sheet_order, c.row_idx, c.col_idx`,
+        [commitId]
+    );
+
+    return { commit, changes: changesResult.rows };
+};
+
+const rollbackWorkbookToCommit = async ({ workbookId, commitId, userId }) => {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const commitCheck = await client.query(
+            'SELECT * FROM commits WHERE id = $1 AND workbook_id = $2',
+            [commitId, workbookId]
+        );
+
+        if (commitCheck.rows.length === 0) {
+            throw new Error('Commit not found or does not belong to this workbook');
+        }
+
+        const cellVersions = await client.query(
+            `SELECT cv.*, c.id as cell_id, c.worksheet_id
+             FROM cell_versions cv
+             JOIN cells c ON cv.cell_id = c.id
+             WHERE cv.commit_id = $1`,
+            [commitId]
+        );
+
+        for (const version of cellVersions.rows) {
+            await client.query(
+                `UPDATE cells 
+                 SET value = $1, formula = $2, style = $3
+                 WHERE id = $4`,
+                [version.value, version.formula, version.style, version.cell_id]
+            );
+        }
+
+        const hash = crypto.createHash('sha256')
+            .update(`${workbookId}-${userId}-${Date.now()}-rollback`)
+            .digest('hex');
+
+        const newCommitResult = await client.query(
+            `INSERT INTO commits (workbook_id, user_id, message, hash)
+             VALUES ($1, $2, $3, $4) RETURNING *`,
+            [workbookId, userId, `Rolled back to commit ${commitId}`, hash]
+        );
+
+        for (const version of cellVersions.rows) {
+            await client.query(
+                `INSERT INTO cell_versions (commit_id, cell_id, value, formula, style)
+                 VALUES ($1, $2, $3, $4, $5)`,
+                [newCommitResult.rows[0].id, version.cell_id, version.value, version.formula, version.style]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        return {
+            message: 'Rollback successful',
+            new_commit: newCommitResult.rows[0],
+            cells_restored: cellVersions.rows.length,
+        };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
 // Create a new commit (snapshot of current workbook state)
 app.post('/api/commits', commitLimiter, requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
     const { workbook_id, user_id, message } = req.body;
@@ -2159,27 +2401,31 @@ app.get('/api/workbooks/:id/commits', generalLimiter, requireRequester, loadWork
     const { limit = 50, offset = 0 } = req.query;
 
     try {
-        const result = await pool.query(
-            `SELECT 
-                c.id,
-                c.message,
-                c.user_id,
-                c.timestamp,
-                c.hash,
-                COUNT(cv.id) as changes_count
-             FROM commits c
-             LEFT JOIN cell_versions cv ON c.id = cv.commit_id
-             WHERE c.workbook_id = $1
-             GROUP BY c.id
-             ORDER BY c.timestamp DESC
-             LIMIT $2 OFFSET $3`,
-            [id, limit, offset]
-        );
-
-        res.json({ commits: result.rows });
+        const commits = await fetchWorkbookCommitHistory(id, limit, offset);
+        res.json({ commits });
 
     } catch (error) {
+        if (error.code === 'INVALID_PAGINATION') {
+            return res.status(400).json({ error: error.message, code: error.code });
+        }
         console.error('Error fetching commits:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Alias: planned history endpoint
+app.get('/api/workbooks/:id/history', generalLimiter, requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const { id } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+
+    try {
+        const commits = await fetchWorkbookCommitHistory(id, limit, offset);
+        res.json({ commits });
+    } catch (error) {
+        if (error.code === 'INVALID_PAGINATION') {
+            return res.status(400).json({ error: error.message, code: error.code });
+        }
+        console.error('Error fetching commit history:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -2231,42 +2477,88 @@ app.get('/api/commits/:id', requireRequester, loadCommitAccess, async (req, res)
     const { id } = req.params;
 
     try {
-        // Get commit info
-        const commitResult = await pool.query(
-            'SELECT * FROM commits WHERE id = $1',
-            [id]
+        const details = await fetchCommitDetails(id);
+        res.json(details);
+
+    } catch (error) {
+        if (error.code === 'COMMIT_NOT_FOUND') {
+            return res.status(404).json({ error: error.message, code: error.code });
+        }
+        console.error('Error fetching commit details:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Alias: planned workbook-scoped commit detail endpoint
+app.get('/api/workbooks/:id/commits/:commitId', requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const workbookId = parseInt(req.params.id, 10);
+    const commitId = parseInt(req.params.commitId, 10);
+
+    if (!commitId || Number.isNaN(commitId)) {
+        return res.status(400).json({ error: 'Valid commit ID is required', code: 'INVALID_COMMIT_ID' });
+    }
+
+    try {
+        const commitOwnership = await pool.query(
+            'SELECT id FROM commits WHERE id = $1 AND workbook_id = $2',
+            [commitId, workbookId]
         );
 
-        if (commitResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Commit not found' });
+        if (commitOwnership.rows.length === 0) {
+            return res.status(404).json({ error: 'Commit not found for workbook', code: 'COMMIT_NOT_FOUND' });
         }
 
-        const commit = commitResult.rows[0];
+        const details = await fetchCommitDetails(commitId);
+        res.json(details);
+    } catch (error) {
+        if (error.code === 'COMMIT_NOT_FOUND') {
+            return res.status(404).json({ error: error.message, code: error.code });
+        }
+        console.error('Error fetching workbook commit details:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
-        // Get cell changes for this commit from the optimized commit_changes table
-        const changesResult = await pool.query(
-            `SELECT 
-                cc.*,
-                c.address,
-                c.row_idx,
-                c.col_idx,
-                w.name as worksheet_name
-             FROM commit_changes cc
-             JOIN cells c ON cc.cell_id = c.id
-             JOIN worksheets w ON c.worksheet_id = w.id
-             WHERE cc.commit_id = $1
-             ORDER BY w.sheet_order, c.row_idx, c.col_idx`,
-            [id]
+// Cell-specific history endpoint
+app.get('/api/cells/:cellId/history', generalLimiter, requireRequester, loadCellAccess, async (req, res) => {
+    const { cellId } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+
+    const pagination = parsePagination(limit, offset, 50, 200);
+    if (pagination.error) {
+        return res.status(400).json({ error: pagination.error, code: 'INVALID_PAGINATION' });
+    }
+
+    try {
+        const historyResult = await pool.query(
+            `SELECT
+                cv.id,
+                cv.commit_id,
+                cv.cell_id,
+                cv.value,
+                cv.formula,
+                cv.style,
+                c.user_id,
+                c.message,
+                c.timestamp,
+                c.hash
+             FROM cell_versions cv
+             JOIN commits c ON c.id = cv.commit_id
+             WHERE cv.cell_id = $1
+             ORDER BY c.timestamp DESC
+             LIMIT $2 OFFSET $3`,
+            [cellId, pagination.limit, pagination.offset]
         );
 
         res.json({
-            commit,
-            changes: changesResult.rows
+            cell_id: Number(cellId),
+            workbook_id: req.cellAccess.workbookId,
+            worksheet_id: req.cellAccess.worksheetId,
+            history: historyResult.rows,
         });
-
     } catch (error) {
-        console.error('Error fetching commit details:', error);
-        res.status(500).json({ error: error.message });
+        logger.error('Error fetching cell history', { error: error.message, cellId });
+        res.status(500).json({ error: 'Failed to fetch cell history' });
     }
 });
 
@@ -2383,73 +2675,48 @@ app.post('/api/workbooks/:id/rollback', requireRequester, loadWorkbookAccess, re
         return res.status(403).json({ error: 'Requester must match user_id for rollback', code: 'ROLLBACK_USER_MISMATCH' });
     }
 
-    const client = await pool.connect();
     try {
-        await client.query('BEGIN');
-
-        // Verify commit belongs to this workbook
-        const commitCheck = await client.query(
-            'SELECT * FROM commits WHERE id = $1 AND workbook_id = $2',
-            [commit_id, id]
-        );
-
-        if (commitCheck.rows.length === 0) {
-            throw new Error('Commit not found or does not belong to this workbook');
-        }
-
-        // Get all cell versions from the target commit
-        const cellVersions = await client.query(
-            `SELECT cv.*, c.id as cell_id, c.worksheet_id
-             FROM cell_versions cv
-             JOIN cells c ON cv.cell_id = c.id
-             WHERE cv.commit_id = $1`,
-            [commit_id]
-        );
-
-        // Update current cells to match the commit state
-        for (const version of cellVersions.rows) {
-            await client.query(
-                `UPDATE cells 
-                 SET value = $1, formula = $2, style = $3
-                 WHERE id = $4`,
-                [version.value, version.formula, version.style, version.cell_id]
-            );
-        }
-
-        // Create a new commit for the rollback action
-        const crypto = require('crypto');
-        const hash = crypto.createHash('sha256')
-            .update(`${id}-${user_id}-${Date.now()}-rollback`)
-            .digest('hex');
-
-        const newCommitResult = await client.query(
-            `INSERT INTO commits (workbook_id, user_id, message, hash)
-             VALUES ($1, $2, $3, $4) RETURNING *`,
-            [id, user_id, `Rolled back to commit ${commit_id}`, hash]
-        );
-
-        // Snapshot the rolled-back state
-        for (const version of cellVersions.rows) {
-            await client.query(
-                `INSERT INTO cell_versions (commit_id, cell_id, value, formula, style)
-                 VALUES ($1, $2, $3, $4, $5)`,
-                [newCommitResult.rows[0].id, version.cell_id, version.value, version.formula, version.style]
-            );
-        }
-
-        await client.query('COMMIT');
-        res.json({
-            message: 'Rollback successful',
-            new_commit: newCommitResult.rows[0],
-            cells_restored: cellVersions.rows.length
+        const rollbackResult = await rollbackWorkbookToCommit({
+            workbookId: id,
+            commitId: commit_id,
+            userId: user_id,
         });
+        res.json(rollbackResult);
 
     } catch (error) {
-        await client.query('ROLLBACK');
         console.error('Error during rollback:', error);
         res.status(500).json({ error: error.message });
-    } finally {
-        client.release();
+    }
+});
+
+// Alias: planned revert endpoint shape
+app.post('/api/workbooks/:id/revert/:commitId', requireRequester, loadWorkbookAccess, requireWorkbookWrite, async (req, res) => {
+    const { id, commitId } = req.params;
+    const user_id = req.body?.user_id || req.body?.requester_id || req.requesterId;
+
+    if (!user_id) {
+        return res.status(400).json({ error: 'user_id is required', code: 'USER_ID_REQUIRED' });
+    }
+
+    if (req.requesterRole !== 'admin' && user_id !== req.requesterId) {
+        return res.status(403).json({ error: 'Requester must match user_id for rollback', code: 'ROLLBACK_USER_MISMATCH' });
+    }
+
+    const parsedCommitId = parseInt(commitId, 10);
+    if (!parsedCommitId || Number.isNaN(parsedCommitId)) {
+        return res.status(400).json({ error: 'Valid commit_id is required', code: 'INVALID_COMMIT_ID' });
+    }
+
+    try {
+        const rollbackResult = await rollbackWorkbookToCommit({
+            workbookId: id,
+            commitId: parsedCommitId,
+            userId: user_id,
+        });
+        res.json(rollbackResult);
+    } catch (error) {
+        console.error('Error during revert:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 

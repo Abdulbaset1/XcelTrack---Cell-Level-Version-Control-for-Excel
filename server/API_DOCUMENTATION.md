@@ -192,6 +192,12 @@ Retrieve all workbooks owned by a user.
 GET /workbooks?owner_id=firebase_uid
 ```
 
+Optional pagination:
+
+```http
+GET /workbooks?owner_id=firebase_uid&limit=20&offset=0
+```
+
 **Response**:
 ```json
 [
@@ -287,6 +293,12 @@ Retrieve commit history for a workbook.
 GET /workbooks/:id/commits?limit=50&offset=0
 ```
 
+Alias route:
+
+```http
+GET /workbooks/:id/history?limit=50&offset=0
+```
+
 **Response**:
 ```json
 {
@@ -310,6 +322,12 @@ Retrieve detailed information about a specific commit.
 
 ```http
 GET /commits/:id
+```
+
+Workbook-scoped alias:
+
+```http
+GET /workbooks/:id/commits/:commitId
 ```
 
 **Response**:
@@ -353,6 +371,43 @@ POST /workbooks/:id/rollback
 {
   "commit_id": 5,
   "user_id": "firebase_uid"
+}
+```
+
+Path-param alias:
+
+```http
+POST /workbooks/:id/revert/:commitId
+```
+
+---
+
+### Get Cell History
+Retrieve version history for a specific cell.
+
+```http
+GET /cells/:cellId/history?limit=50&offset=0
+```
+
+**Response**:
+```json
+{
+  "cell_id": 12,
+  "workbook_id": 3,
+  "worksheet_id": 9,
+  "history": [
+    {
+      "id": 200,
+      "commit_id": 77,
+      "cell_id": 12,
+      "value": "1200",
+      "formula": null,
+      "user_id": "firebase_uid",
+      "message": "Updated Q1 figures",
+      "timestamp": "2024-01-01T00:00:00.000Z",
+      "hash": "abc123..."
+    }
+  ]
 }
 ```
 

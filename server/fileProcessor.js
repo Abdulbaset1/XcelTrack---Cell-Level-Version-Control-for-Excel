@@ -1,5 +1,7 @@
 const ExcelJS = require('exceljs');
+const XLSX = require('xlsx');
 const { EventEmitter } = require('events');
+const path = require('path');
 
 class FileProcessor extends EventEmitter {
     constructor() {
@@ -16,6 +18,11 @@ class FileProcessor extends EventEmitter {
     async processExcelFile(fileBuffer, fileName) {
         try {
             this.emit('progress', { stage: 'loading', percent: 0 });
+
+            const ext = path.extname(fileName || '').toLowerCase();
+            if (ext === '.xls') {
+                return this.processXlsFile(fileBuffer, fileName);
+            }
 
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.load(fileBuffer);
@@ -55,6 +62,66 @@ class FileProcessor extends EventEmitter {
             this.emit('error', error);
             throw error;
         }
+    }
+
+    processXlsFile(fileBuffer, fileName) {
+        this.emit('progress', { stage: 'loading', percent: 10 });
+
+        const workbook = XLSX.read(fileBuffer, { type: 'buffer', cellFormula: true, cellDates: true });
+        const sheets = [];
+        let totalCells = 0;
+
+        workbook.SheetNames.forEach((sheetName, index) => {
+            const worksheet = workbook.Sheets[sheetName];
+            const ref = worksheet['!ref'] || 'A1:A1';
+            const range = XLSX.utils.decode_range(ref);
+
+            const cells = [];
+            let cellCount = 0;
+
+            for (let row = range.s.r; row <= range.e.r; row++) {
+                for (let col = range.s.c; col <= range.e.c; col++) {
+                    const address = XLSX.utils.encode_cell({ r: row, c: col });
+                    const cell = worksheet[address];
+                    if (!cell) continue;
+
+                    const value = cell.v ?? null;
+                    const formula = cell.f ?? null;
+
+                    cells.push({
+                        row,
+                        col,
+                        address,
+                        value,
+                        formula,
+                        style: {},
+                    });
+                    cellCount++;
+                }
+            }
+
+            totalCells += cellCount;
+            sheets.push({
+                name: sheetName,
+                order: index,
+                data: worksheet,
+                cells,
+                cellCount,
+                rowCount: range.e.r + 1,
+                columnCount: range.e.c + 1,
+            });
+        });
+
+        const result = {
+            name: fileName,
+            sheets,
+            totalSheets: sheets.length,
+            totalCells,
+        };
+
+        this.emit('progress', { stage: 'complete', percent: 100 });
+        this.emit('complete', result);
+        return result;
     }
 
     /**
@@ -221,11 +288,14 @@ class FileProcessor extends EventEmitter {
 
         const allowedMimeTypes = [
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            // 'application/vnd.ms-excel', // Legacy .xls not supported by ExcelJS for loading
+            'application/vnd.ms-excel',
         ];
 
-        if (file && !allowedMimeTypes.includes(file.mimetype)) {
-            errors.push('Invalid file type. Only Modern Excel files (.xlsx) are supported at this time.');
+        const allowedExtensions = ['.xlsx', '.xls'];
+        const ext = file?.originalname ? path.extname(file.originalname).toLowerCase() : '';
+
+        if (file && !allowedMimeTypes.includes(file.mimetype) && !allowedExtensions.includes(ext)) {
+            errors.push('Invalid file type. Only Excel files (.xlsx, .xls) are supported.');
         }
 
         return {
