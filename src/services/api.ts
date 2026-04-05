@@ -27,6 +27,72 @@ export const getWorkbooks = async (ownerId: string) => {
     return response.json();
 };
 
+export interface ProfileSummaryStats {
+    excelFiles: number;
+    collaborations: number;
+    revisions: number;
+    storageUsedBytes: number;
+    storageLimitBytes: number;
+    storageRemainingBytes: number;
+    storageUsagePercent: number;
+}
+
+export interface ProfileSummaryActivityItem {
+    id: number;
+    action: string;
+    file: string;
+    message: string;
+    timestamp: string;
+    workbook_id: number;
+    changes_count: number;
+    hash: string;
+}
+
+export interface ProfileSummaryResponse {
+    user: {
+        uid: string;
+        email: string;
+        name: string;
+        role: string;
+        created_at: string;
+    };
+    stats: ProfileSummaryStats;
+    recentActivity: ProfileSummaryActivityItem[];
+}
+
+export const getProfileSummary = async (
+    requesterId: string,
+    userId?: string
+): Promise<ProfileSummaryResponse> => {
+    const params = new URLSearchParams({ requester_id: requesterId });
+    if (userId) params.set('user_id', userId);
+
+    const response = await fetch(`${API_URL}/profile/summary?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch profile summary');
+    }
+    return response.json();
+};
+
+export const updateProfileDetails = async (
+    requesterId: string,
+    payload: { user_id?: string; name: string }
+): Promise<{ user: { firebase_uid: string; email: string; name: string; role: string; created_at: string } }> => {
+    const response = await fetch(`${API_URL}/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, ...payload }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update profile');
+    }
+
+    return response.json();
+};
+
 export interface RegisteredUser {
     firebase_uid: string;
     email: string;
@@ -428,6 +494,156 @@ export const reorderWorksheets = async (workbookId: string, requesterId: string,
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to reorder worksheets');
     }
+    return response.json();
+};
+
+// ============================================
+// AI API
+// ============================================
+
+export interface ExplainFormulaResponse {
+    formula: string;
+    explanation: string;
+    provider: string;
+    model: string;
+    fallback: boolean;
+}
+
+export interface DetectErrorsResponse {
+    workbook_id: number;
+    totalScanned: number;
+    totalIssues: number;
+    findings: Array<{
+        worksheet: string;
+        cell: string;
+        errorType: string;
+        currentValue: string;
+        formula: string;
+        suggestion: string;
+    }>;
+}
+
+export interface AnalyzeDataResponse {
+    workbook_id: number;
+    summary: string;
+    stats: {
+        count: number;
+        min: number;
+        max: number;
+        mean: number;
+        median: number;
+        stdDev: number;
+        q1: number;
+        q3: number;
+        iqr: number;
+    } | null;
+    outliers: Array<{
+        worksheet: string;
+        cell: string;
+        value: number;
+    }>;
+}
+
+export interface PromptAIResponse {
+    prompt: string;
+    answer: string;
+    provider: string;
+    model: string;
+    fallback: boolean;
+    selection: {
+        worksheet_id: number;
+        row: number;
+        col: number;
+        rowCount: number;
+        colCount: number;
+    } | null;
+    selectedCellsCount: number;
+}
+
+export const explainFormula = async (
+    requesterId: string,
+    payload: {
+        formula: string;
+        workbook_id?: number;
+        worksheet_name?: string;
+        cell_reference?: string;
+    }
+): Promise<ExplainFormulaResponse> => {
+    const response = await fetch(`${API_URL}/ai/explain-formula`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, ...payload }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to explain formula');
+    }
+
+    return response.json();
+};
+
+export const detectWorkbookErrors = async (
+    requesterId: string,
+    workbookId: number
+): Promise<DetectErrorsResponse> => {
+    const response = await fetch(`${API_URL}/ai/detect-errors`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, workbook_id: workbookId }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to detect workbook errors');
+    }
+
+    return response.json();
+};
+
+export const analyzeWorkbookData = async (
+    requesterId: string,
+    workbookId: number
+): Promise<AnalyzeDataResponse> => {
+    const response = await fetch(`${API_URL}/ai/analyze-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, workbook_id: workbookId }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to analyze workbook data');
+    }
+
+    return response.json();
+};
+
+export const askPromptAI = async (
+    requesterId: string,
+    payload: {
+        workbook_id: number;
+        prompt: string;
+        worksheet_id?: number;
+        selection?: {
+            row: number;
+            col: number;
+            rowCount: number;
+            colCount: number;
+        };
+    }
+): Promise<PromptAIResponse> => {
+    const response = await fetch(`${API_URL}/ai/prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, ...payload }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to run AI prompt');
+    }
+
     return response.json();
 };
 

@@ -67,6 +67,17 @@ const commitLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// AI endpoints rate limiter - 20 requests per 15 minutes
+const aiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: {
+        error: 'Too many AI requests, please try again after 15 minutes',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 module.exports = {
     generalLimiter,
     authLimiter,
@@ -74,4 +85,5 @@ module.exports = {
     uploadLimiter,
     adminLimiter,
     commitLimiter,
+    aiLimiter,
 };

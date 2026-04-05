@@ -12,6 +12,10 @@ interface Stats {
   collaborations: number;
   revisions: number;
   storageUsed: string;
+  storageLimit: string;
+  storageUsedBytes: number;
+  storageLimitBytes: number;
+  storageUsagePercent: number;
 }
 
 interface ProfileCardProps {
@@ -77,7 +81,19 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ userData, stats, onUploadPict
                   <div className="text-[var(--text-secondary)] text-sm font-medium">Revisions</div>
                 </div>
                 <div className="bg-[var(--bg-primary)] rounded-xl p-4 text-center border-2 border-[var(--border-color)]">
-                  <div className="text-2xl font-bold text-[var(--text-primary)]">{stats.storageUsed}</div>
+                  <div className="text-xl font-bold text-[var(--text-primary)]">{stats.storageUsed}</div>
+                  <div className="text-[var(--text-secondary)] text-xs font-medium mt-1">
+                    of {stats.storageLimit}
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-gray-200 mt-3 overflow-hidden">
+                    <div
+                      className={`h-full ${stats.storageUsagePercent >= 90 ? 'bg-red-500' : 'bg-blue-500'}`}
+                      style={{ width: `${Math.max(0, Math.min(100, stats.storageUsagePercent))}%` }}
+                    />
+                  </div>
+                  <div className="text-[var(--text-secondary)] text-xs font-medium mt-1">
+                    {stats.storageUsagePercent}% used
+                  </div>
                   <div className="text-[var(--text-secondary)] text-sm font-medium">Storage Used</div>
                 </div>
               </div>

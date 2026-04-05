@@ -16,7 +16,7 @@ import { Commit } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
-import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCommitSnapshot, getCommitHistory, createWorksheet, renameWorksheet, deleteWorksheet, reorderWorksheets, getWorkbookDiff, resolveWorkbookConflict, getWorkbookConflicts, CommitDiff } from '../services/api';
+import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCommitSnapshot, getCommitHistory, createWorksheet, renameWorksheet, deleteWorksheet, reorderWorksheets, getWorkbookDiff, resolveWorkbookConflict, getWorkbookConflicts, explainFormula, detectWorkbookErrors, analyzeWorkbookData, askPromptAI, CommitDiff } from '../services/api';
 import HybridSyncBanner from '../components/HybridSyncBanner';
 import ConflictNotificationBanner from '../components/ConflictNotificationBanner';
 import ConflictResolutionViewer from '../components/ConflictResolutionViewer';
@@ -57,6 +57,10 @@ const Editor: React.FC = () => {
   const [isComparisonLoading, setIsComparisonLoading] = useState(false);
   const [baseCommitId, setBaseCommitId] = useState<number | null>(null);
   const [hasLocalEdits, setHasLocalEdits] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiPanelTitle, setAiPanelTitle] = useState<string>('');
+  const [aiPanelContent, setAiPanelContent] = useState<string>('');
+  const [aiPromptInput, setAiPromptInput] = useState<string>('');
 
   // ── Cell Version Tracking ───────────────────────────────────────────
   // Maps "worksheetId:row:col" → current cell_version from server
@@ -412,6 +416,132 @@ const Editor: React.FC = () => {
     }
   };
 
+  const handleExplainFormulaAI = React.useCallback(async () => {
+    if (!user?.uid || !id) {
+      showToast('Login is required for AI actions', 'warning');
+      return;
+    }
+
+    const formulaInput = (cellFormula || '').trim();
+    if (!formulaInput) {
+      showToast('Select a formula cell or enter a formula first', 'info');
+      return;
+    }
+
+    setIsAiLoading(true);
+    try {
+      const response = await explainFormula(user.uid, {
+        formula: formulaInput,
+        workbook_id: parseInt(id, 10),
+        cell_reference: selectedCell,
+      });
+
+      setAiPanelTitle(`AI Formula Explanation (${selectedCell})`);
+      setAiPanelContent(response.explanation || 'No explanation returned.');
+      showToast('Formula explanation ready', 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'Failed to explain formula', 'error');
+    } finally {
+      setIsAiLoading(false);
+    }
+  }, [user?.uid, id, cellFormula, selectedCell, showToast]);
+
+  const handleDetectErrorsAI = React.useCallback(async () => {
+    if (!user?.uid || !id) {
+      showToast('Login is required for AI actions', 'warning');
+      return;
+    }
+
+    setIsAiLoading(true);
+    try {
+      const response = await detectWorkbookErrors(user.uid, parseInt(id, 10));
+      const findingsPreview = response.findings
+        .slice(0, 10)
+        .map((item) => `${item.worksheet}!${item.cell} (${item.errorType}): ${item.suggestion}`)
+        .join('\n');
+
+      const summary = `Scanned: ${response.totalScanned} cells\nIssues: ${response.totalIssues}`;
+      setAiPanelTitle('AI Error Detection');
+      setAiPanelContent(findingsPreview ? `${summary}\n\n${findingsPreview}` : `${summary}\n\nNo issues detected.`);
+      showToast('Error scan completed', 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'Failed to detect errors', 'error');
+    } finally {
+      setIsAiLoading(false);
+    }
+  }, [user?.uid, id, showToast]);
+
+  const handleAnalyzeDataAI = React.useCallback(async () => {
+    if (!user?.uid || !id) {
+      showToast('Login is required for AI actions', 'warning');
+      return;
+    }
+
+    setIsAiLoading(true);
+    try {
+      const response = await analyzeWorkbookData(user.uid, parseInt(id, 10));
+      const statsText = response.stats
+        ? `Count: ${response.stats.count}\nMin: ${response.stats.min}\nMax: ${response.stats.max}\nMean: ${response.stats.mean.toFixed(2)}\nMedian: ${response.stats.median.toFixed(2)}`
+        : 'No numeric stats available.';
+      const outlierText = response.outliers.length > 0
+        ? `\n\nOutliers:\n${response.outliers.slice(0, 10).map((o) => `${o.worksheet}!${o.cell} = ${o.value}`).join('\n')}`
+        : '\n\nNo outliers detected.';
+
+      setAiPanelTitle('AI Data Analysis');
+      setAiPanelContent(`${response.summary}\n\n${statsText}${outlierText}`);
+      showToast('Data analysis completed', 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'Failed to analyze data', 'error');
+    } finally {
+      setIsAiLoading(false);
+    }
+  }, [user?.uid, id, showToast]);
+
+  const handleAskPromptAI = React.useCallback(async () => {
+    if (!user?.uid || !id) {
+      showToast('Login is required for AI actions', 'warning');
+      return;
+    }
+
+    const promptText = aiPromptInput.trim();
+    if (!promptText) {
+      showToast('Enter your query for AI', 'info');
+      return;
+    }
+
+    const selection = editorRef.current?.getSelection?.();
+    const worksheetIdNum = Number(activeWorksheetId);
+
+    setIsAiLoading(true);
+    try {
+      const response = await askPromptAI(user.uid, {
+        workbook_id: parseInt(id, 10),
+        prompt: promptText,
+        worksheet_id: Number.isFinite(worksheetIdNum) ? worksheetIdNum : undefined,
+        selection: selection
+          ? {
+            row: selection.row,
+            col: selection.col,
+            rowCount: selection.rowCount,
+            colCount: selection.colCount,
+          }
+          : undefined,
+      });
+
+      const selectionText = response.selection
+        ? `Sheet ${response.selection.worksheet_id}, row ${response.selection.row + 1}, col ${response.selection.col + 1}, size ${response.selection.rowCount}x${response.selection.colCount}`
+        : `Cell ${selectedCell}`;
+
+      setAiPanelTitle(`AI Prompt Result (${selectionText})`);
+      setAiPanelContent(response.answer || 'No answer returned.');
+      showToast('AI prompt response ready', 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'Failed to run AI prompt', 'error');
+    } finally {
+      setIsAiLoading(false);
+    }
+  }, [user?.uid, id, aiPromptInput, activeWorksheetId, selectedCell, showToast]);
+
   const handleCompareCommits = async () => {
     if (!id || !user?.uid || !selectedCommitDetails?.commit?.id) return;
 
@@ -753,6 +883,69 @@ const Editor: React.FC = () => {
         onFormulaChange={handleFormulaChange}
         onFormulaSubmit={handleFormulaSubmit}
       />
+
+      <div className="px-6 pt-3 pb-2 bg-gray-50 border-b border-gray-200">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleExplainFormulaAI}
+            disabled={isAiLoading}
+            className="px-3 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {isAiLoading ? 'Working...' : 'AI Explain Formula'}
+          </button>
+          <button
+            onClick={handleDetectErrorsAI}
+            disabled={isAiLoading}
+            className="px-3 py-2 text-sm font-medium rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-60"
+          >
+            AI Detect Errors
+          </button>
+          <button
+            onClick={handleAnalyzeDataAI}
+            disabled={isAiLoading}
+            className="px-3 py-2 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+          >
+            AI Analyze Data
+          </button>
+          {aiPanelContent && (
+            <button
+              onClick={() => {
+                setAiPanelTitle('');
+                setAiPanelContent('');
+              }}
+              className="px-3 py-2 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-white"
+            >
+              Clear AI Output
+            </button>
+          )}
+        </div>
+
+        <div className="mt-3 flex flex-col gap-2">
+          <textarea
+            value={aiPromptInput}
+            onChange={(event) => setAiPromptInput(event.target.value)}
+            placeholder="Ask AI about the currently selected cells (e.g., explain this range, find anomalies, suggest improvements)..."
+            className="w-full min-h-[84px] p-3 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAskPromptAI}
+              disabled={isAiLoading}
+              className="px-3 py-2 text-sm font-medium rounded-md bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-60"
+            >
+              Ask AI on Selection
+            </button>
+            <span className="text-xs text-gray-500">Selected: {selectedCell}</span>
+          </div>
+        </div>
+
+        {aiPanelContent && (
+          <div className="mt-3 p-3 bg-white border border-gray-200 rounded-md shadow-sm">
+            <p className="text-sm font-semibold text-gray-800 mb-2">{aiPanelTitle}</p>
+            <pre className="text-xs text-gray-700 whitespace-pre-wrap break-words font-sans">{aiPanelContent}</pre>
+          </div>
+        )}
+      </div>
 
       {/* Main Container for Side-by-Side Layout */}
       <div className="flex-1 flex overflow-hidden relative">

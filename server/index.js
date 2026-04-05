@@ -21,9 +21,11 @@ const {
     uploadLimiter,
     adminLimiter,
     commitLimiter,
+    aiLimiter,
 } = require('./rateLimiter');
 const FileProcessor = require('./fileProcessor');
 const DiffEngine = require('./diffEngine');
+const AIService = require('./aiService');
 const { initWebSocket } = require('./websocketServer');
 
 const app = express();
@@ -146,6 +148,11 @@ const createTables = async () => {
             )
         `);
         console.log('Workbooks table ready');
+
+        await pool.query(`
+            ALTER TABLE workbooks
+            ADD COLUMN IF NOT EXISTS storage_bytes BIGINT DEFAULT 0
+        `);
 
         // Worksheets Table
         await pool.query(`
@@ -293,6 +300,26 @@ const createTables = async () => {
         `);
         console.log('Notifications table ready');
 
+        // AI Usage Logs Table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS ai_usage_logs (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(255) REFERENCES users(firebase_uid) ON DELETE SET NULL,
+                workbook_id INT REFERENCES workbooks(id) ON DELETE SET NULL,
+                endpoint VARCHAR(100) NOT NULL,
+                provider VARCHAR(50),
+                model VARCHAR(100),
+                prompt_tokens INT DEFAULT 0,
+                completion_tokens INT DEFAULT 0,
+                total_tokens INT DEFAULT 0,
+                estimated_cost_usd NUMERIC(12, 6) DEFAULT 0,
+                status VARCHAR(20) DEFAULT 'success',
+                metadata JSONB,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        console.log('AI usage logs table ready');
+
         // Create indexes for optimized query performance
         await pool.query(`
             CREATE INDEX IF NOT EXISTS idx_workbooks_owner_id ON workbooks(owner_id);
@@ -313,6 +340,8 @@ const createTables = async () => {
             CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
             CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read);
+            CREATE INDEX IF NOT EXISTS idx_ai_usage_user_created ON ai_usage_logs(user_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_ai_usage_workbook_created ON ai_usage_logs(workbook_id, created_at DESC);
         `);
         console.log('Database indexes created successfully');
 
@@ -326,6 +355,7 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 const diffEngine = new DiffEngine(pool);
+const aiService = new AIService();
 
 // --- Audit Log Helper ---
 const logAuditEvent = async (userId, userEmail, action, details, ipAddress) => {
@@ -336,6 +366,41 @@ const logAuditEvent = async (userId, userEmail, action, details, ipAddress) => {
         );
     } catch (err) {
         logger.error('Failed to write audit log', { error: err.message, action });
+    }
+};
+
+const logAiUsage = async ({
+    userId,
+    workbookId = null,
+    endpoint,
+    provider = 'heuristic',
+    model = 'local-rule-engine',
+    usage = {},
+    estimatedCostUsd = 0,
+    status = 'success',
+    metadata = null,
+}) => {
+    try {
+        await pool.query(
+            `INSERT INTO ai_usage_logs
+                (user_id, workbook_id, endpoint, provider, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, status, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [
+                userId || null,
+                workbookId || null,
+                endpoint,
+                provider,
+                model,
+                usage?.prompt_tokens || 0,
+                usage?.completion_tokens || 0,
+                usage?.total_tokens || 0,
+                estimatedCostUsd || 0,
+                status,
+                metadata ? JSON.stringify(metadata) : null,
+            ]
+        );
+    } catch (error) {
+        logger.warn('Failed to log AI usage', { error: error.message, endpoint, userId });
     }
 };
 
@@ -407,6 +472,42 @@ const parsePagination = (limitRaw, offsetRaw, defaultLimit = null, maxLimit = 20
         offset: parsedOffset,
         hasPagination: hasLimit || hasOffset,
     };
+};
+
+const STORAGE_LIMIT_BYTES = 500 * 1024 * 1024;
+
+const getUserStorageUsedBytes = async (dbClient, userId) => {
+    const storageResult = await dbClient.query(
+        `SELECT COALESCE(
+            SUM(
+                CASE
+                    WHEN COALESCE(w.storage_bytes, 0) > 0 THEN w.storage_bytes
+                    ELSE COALESCE(legacy.estimated_bytes, 0)
+                END
+            ),
+            0
+        )::bigint AS storage_used_bytes
+         FROM workbooks w
+         LEFT JOIN (
+            SELECT
+                ws.workbook_id,
+                COALESCE(
+                    SUM(
+                        OCTET_LENGTH(COALESCE(c.value, '')) +
+                        OCTET_LENGTH(COALESCE(c.formula, ''))
+                    ),
+                    0
+                )::bigint AS estimated_bytes
+            FROM worksheets ws
+            LEFT JOIN cells c ON c.worksheet_id = ws.id
+            GROUP BY ws.workbook_id
+         ) legacy ON legacy.workbook_id = w.id
+         WHERE w.owner_id = $1`,
+        [userId]
+    );
+
+    const storageRow = storageResult.rows?.[0];
+    return Number(storageRow?.storage_used_bytes || 0);
 };
 
 const persistUploadedFile = async (file) => {
@@ -905,6 +1006,258 @@ app.delete('/api/notifications/:id', requireRequester, async (req, res) => {
     }
 });
 
+// AI: Explain formula
+app.post('/api/ai/explain-formula', aiLimiter, requireRequester, async (req, res) => {
+    const { formula, workbook_id, worksheet_name, cell_reference } = req.body;
+
+    if (!formula || String(formula).trim().length === 0) {
+        return res.status(400).json({ error: 'formula is required', code: 'FORMULA_REQUIRED' });
+    }
+
+    try {
+        const result = await aiService.explainFormula({
+            formula,
+            context: {
+                workbook_id,
+                worksheet_name,
+                cell_reference,
+            },
+        });
+
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id || null,
+            endpoint: '/api/ai/explain-formula',
+            provider: result.provider,
+            model: result.model,
+            usage: result.usage,
+            metadata: { fallback: result.fallback === true },
+            status: 'success',
+        });
+
+        res.json({
+            formula,
+            explanation: result.explanation,
+            provider: result.provider,
+            model: result.model,
+            fallback: result.fallback,
+        });
+    } catch (error) {
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id || null,
+            endpoint: '/api/ai/explain-formula',
+            status: 'failed',
+            metadata: { error: error.message },
+        });
+
+        logger.error('AI formula explanation failed', { error: error.message, requesterId: req.requesterId });
+        res.status(500).json({ error: 'Failed to explain formula' });
+    }
+});
+
+// AI: Detect workbook errors
+app.post('/api/ai/detect-errors', aiLimiter, requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const { workbook_id } = req.body;
+    if (!workbook_id) {
+        return res.status(400).json({ error: 'workbook_id is required', code: 'WORKBOOK_ID_REQUIRED' });
+    }
+
+    try {
+        const cellsResult = await pool.query(
+            `SELECT c.address, c.value, c.formula, c.row_idx, c.col_idx, ws.name as worksheet_name
+             FROM cells c
+             JOIN worksheets ws ON ws.id = c.worksheet_id
+             WHERE ws.workbook_id = $1`,
+            [workbook_id]
+        );
+
+        const report = aiService.detectErrors(cellsResult.rows);
+
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id,
+            endpoint: '/api/ai/detect-errors',
+            provider: 'heuristic',
+            model: 'local-rule-engine',
+            metadata: { totalScanned: report.totalScanned, totalIssues: report.totalIssues },
+            status: 'success',
+        });
+
+        res.json({
+            workbook_id: Number(workbook_id),
+            ...report,
+        });
+    } catch (error) {
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id,
+            endpoint: '/api/ai/detect-errors',
+            status: 'failed',
+            metadata: { error: error.message },
+        });
+
+        logger.error('AI error detection failed', { error: error.message, workbookId: workbook_id });
+        res.status(500).json({ error: 'Failed to detect workbook errors' });
+    }
+});
+
+// AI: Analyze workbook numeric data
+app.post('/api/ai/analyze-data', aiLimiter, requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const { workbook_id } = req.body;
+    if (!workbook_id) {
+        return res.status(400).json({ error: 'workbook_id is required', code: 'WORKBOOK_ID_REQUIRED' });
+    }
+
+    try {
+        const cellsResult = await pool.query(
+            `SELECT c.address, c.value, c.formula, c.row_idx, c.col_idx, ws.name as worksheet_name
+             FROM cells c
+             JOIN worksheets ws ON ws.id = c.worksheet_id
+             WHERE ws.workbook_id = $1`,
+            [workbook_id]
+        );
+
+        const analysis = aiService.analyzeData(cellsResult.rows);
+
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id,
+            endpoint: '/api/ai/analyze-data',
+            provider: 'heuristic',
+            model: 'local-rule-engine',
+            metadata: {
+                numericCount: analysis?.stats?.count || 0,
+                outlierCount: analysis?.outliers?.length || 0,
+            },
+            status: 'success',
+        });
+
+        res.json({
+            workbook_id: Number(workbook_id),
+            ...analysis,
+        });
+    } catch (error) {
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id,
+            endpoint: '/api/ai/analyze-data',
+            status: 'failed',
+            metadata: { error: error.message },
+        });
+
+        logger.error('AI data analysis failed', { error: error.message, workbookId: workbook_id });
+        res.status(500).json({ error: 'Failed to analyze workbook data' });
+    }
+});
+
+// AI: Prompt with optional selected-range context
+app.post('/api/ai/prompt', aiLimiter, requireRequester, loadWorkbookAccess, requireWorkbookRead, async (req, res) => {
+    const { workbook_id, prompt, worksheet_id, selection } = req.body;
+
+    if (!workbook_id) {
+        return res.status(400).json({ error: 'workbook_id is required', code: 'WORKBOOK_ID_REQUIRED' });
+    }
+    if (!prompt || String(prompt).trim().length === 0) {
+        return res.status(400).json({ error: 'prompt is required', code: 'PROMPT_REQUIRED' });
+    }
+    if (String(prompt).length > 1500) {
+        return res.status(400).json({ error: 'prompt is too long (max 1500 chars)', code: 'PROMPT_TOO_LONG' });
+    }
+
+    try {
+        let selectedCells = [];
+        let normalizedSelection = null;
+
+        const wsId = Number(worksheet_id);
+        const row = Number(selection?.row);
+        const col = Number(selection?.col);
+        const rowCount = Number(selection?.rowCount || 1);
+        const colCount = Number(selection?.colCount || 1);
+
+        if (
+            Number.isFinite(wsId) &&
+            Number.isFinite(row) &&
+            Number.isFinite(col) &&
+            Number.isFinite(rowCount) &&
+            Number.isFinite(colCount)
+        ) {
+            const endRow = Math.min(row + rowCount - 1, row + 199);
+            const endCol = Math.min(col + colCount - 1, col + 49);
+
+            const selectedResult = await pool.query(
+                `SELECT address, value, formula, row_idx, col_idx
+                 FROM cells
+                 WHERE worksheet_id = $1
+                   AND row_idx BETWEEN $2 AND $3
+                   AND col_idx BETWEEN $4 AND $5
+                 ORDER BY row_idx, col_idx
+                 LIMIT 200`,
+                [wsId, row, endRow, col, endCol]
+            );
+
+            selectedCells = selectedResult.rows;
+            normalizedSelection = {
+                worksheet_id: wsId,
+                row,
+                col,
+                rowCount,
+                colCount,
+            };
+        }
+
+        const aiResponse = await aiService.respondToPrompt({
+            prompt,
+            context: {
+                workbook_id,
+                worksheet_id: Number.isFinite(wsId) ? wsId : null,
+                selection: normalizedSelection,
+                selectedCells,
+            },
+        });
+
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id,
+            endpoint: '/api/ai/prompt',
+            provider: aiResponse.provider,
+            model: aiResponse.model,
+            usage: aiResponse.usage,
+            metadata: {
+                fallback: aiResponse.fallback === true,
+                selection: normalizedSelection,
+                selectedCellsCount: selectedCells.length,
+            },
+            status: 'success',
+        });
+
+        res.json({
+            prompt,
+            answer: aiResponse.answer,
+            provider: aiResponse.provider,
+            model: aiResponse.model,
+            fallback: aiResponse.fallback,
+            selection: normalizedSelection,
+            selectedCellsCount: selectedCells.length,
+        });
+    } catch (error) {
+        await logAiUsage({
+            userId: req.requesterId,
+            workbookId: workbook_id || null,
+            endpoint: '/api/ai/prompt',
+            status: 'failed',
+            metadata: { error: error.message },
+        });
+
+        logger.error('AI prompt request failed', {
+            error: error.message,
+            requesterId: req.requesterId,
+            workbook_id,
+        });
+        res.status(500).json({ error: 'Failed to process AI prompt' });
+    }
+});
+
 // Sync Endpoint
 app.post('/api/sync-user', authLimiter, async (req, res) => {
     const { uid, email, name } = req.body;
@@ -985,6 +1338,166 @@ app.get('/api/user-role/:uid', async (req, res) => {
     }
 });
 
+// Get profile summary for requester (or admin)
+app.get('/api/profile/summary', requireRequester, async (req, res) => {
+    const targetUserId = req.query.user_id || req.requesterId;
+
+    if (req.requesterRole !== 'admin' && targetUserId !== req.requesterId) {
+        return res.status(403).json({ error: 'Access denied for requested profile', code: 'PROFILE_FORBIDDEN' });
+    }
+
+    try {
+        const [userResult, workbookStatsResult, commitStatsResult, recentActivityResult] = await Promise.all([
+            pool.query(
+                `SELECT firebase_uid, email, name, role, created_at
+                 FROM users
+                 WHERE firebase_uid = $1`,
+                [targetUserId]
+            ),
+            pool.query(
+                `SELECT
+                    COUNT(*) FILTER (WHERE w.owner_id = $1)::int AS excel_files,
+                    COUNT(*) FILTER (WHERE w.owner_id = $1 AND COALESCE(cstats.collaborator_count, 0) > 0)::int AS collaborations
+                 FROM workbooks w
+                 LEFT JOIN (
+                    SELECT workbook_id, COUNT(*)::int AS collaborator_count
+                    FROM workbook_collaborators
+                    GROUP BY workbook_id
+                 ) cstats ON cstats.workbook_id = w.id
+                 WHERE w.owner_id = $1
+                    OR w.id IN (
+                        SELECT workbook_id
+                        FROM workbook_collaborators
+                        WHERE user_id = $1
+                    )`,
+                [targetUserId]
+            ),
+            pool.query(
+                `SELECT COUNT(*)::int AS revisions
+                 FROM commits
+                 WHERE user_id = $1`,
+                [targetUserId]
+            ),
+            pool.query(
+                `SELECT
+                    c.id,
+                    c.message,
+                    c.timestamp,
+                    c.hash,
+                    c.workbook_id,
+                    w.name AS workbook_name,
+                    COUNT(cv.id)::int AS changes_count
+                 FROM commits c
+                 JOIN workbooks w ON c.workbook_id = w.id
+                 LEFT JOIN cell_versions cv ON cv.commit_id = c.id
+                 WHERE c.user_id = $1
+                 GROUP BY c.id, w.name
+                 ORDER BY c.timestamp DESC
+                 LIMIT 10`,
+                [targetUserId]
+            ),
+        ]);
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
+        }
+
+        const userRow = userResult.rows[0];
+        const workbookStats = workbookStatsResult.rows[0] || { excel_files: 0, collaborations: 0 };
+        const commitStats = commitStatsResult.rows[0] || { revisions: 0 };
+        const storageUsedBytes = await getUserStorageUsedBytes(pool, targetUserId);
+        const storageRemainingBytes = Math.max(0, STORAGE_LIMIT_BYTES - storageUsedBytes);
+        const rawUsagePercent = (storageUsedBytes / STORAGE_LIMIT_BYTES) * 100;
+        const storageUsagePercent = storageUsedBytes > 0
+            ? Math.min(100, Math.max(0.1, Number(rawUsagePercent.toFixed(2))))
+            : 0;
+
+        const recentActivity = recentActivityResult.rows.map((item) => {
+            const msg = String(item.message || '').toLowerCase();
+            let action = 'Updated';
+            if (msg.includes('rolled back') || msg.includes('rollback') || msg.includes('revert')) action = 'Reverted';
+            else if (msg.includes('create')) action = 'Created';
+
+            return {
+                id: item.id,
+                action,
+                file: item.workbook_name,
+                message: item.message,
+                timestamp: item.timestamp,
+                workbook_id: item.workbook_id,
+                changes_count: item.changes_count,
+                hash: item.hash,
+            };
+        });
+
+        return res.json({
+            user: {
+                uid: userRow.firebase_uid,
+                email: userRow.email,
+                name: userRow.name,
+                role: userRow.role,
+                created_at: userRow.created_at,
+            },
+            stats: {
+                excelFiles: Number(workbookStats.excel_files || 0),
+                collaborations: Number(workbookStats.collaborations || 0),
+                revisions: Number(commitStats.revisions || 0),
+                storageUsedBytes,
+                storageLimitBytes: STORAGE_LIMIT_BYTES,
+                storageRemainingBytes,
+                storageUsagePercent,
+            },
+            recentActivity,
+        });
+    } catch (error) {
+        logger.error('Error fetching profile summary', {
+            error: error.message,
+            requesterId: req.requesterId,
+            targetUserId,
+        });
+        return res.status(500).json({ error: 'Failed to fetch profile summary' });
+    }
+});
+
+// Update profile (currently supports display name)
+app.put('/api/profile', requireRequester, async (req, res) => {
+    const targetUserId = req.body.user_id || req.requesterId;
+    const name = String(req.body.name || '').trim();
+
+    if (!name) {
+        return res.status(400).json({ error: 'name is required', code: 'NAME_REQUIRED' });
+    }
+
+    if (req.requesterRole !== 'admin' && targetUserId !== req.requesterId) {
+        return res.status(403).json({ error: 'Access denied for profile update', code: 'PROFILE_UPDATE_FORBIDDEN' });
+    }
+
+    try {
+        const updateResult = await pool.query(
+            `UPDATE users
+             SET name = $1
+             WHERE firebase_uid = $2
+             RETURNING firebase_uid, email, name, role, created_at`,
+            [name, targetUserId]
+        );
+
+        if (updateResult.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
+        }
+
+        await cache.del(cache.userKey(targetUserId));
+
+        return res.json({ user: updateResult.rows[0] });
+    } catch (error) {
+        logger.error('Error updating profile', {
+            error: error.message,
+            requesterId: req.requesterId,
+            targetUserId,
+        });
+        return res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
 // Configure Multer for memory storage
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -1012,6 +1525,46 @@ app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), requireR
         return res.status(400).json({ error: validation.errors.join(', ') });
     }
 
+    let parsedData;
+    try {
+        parsedData = await fileProcessor.processExcelFile(file.buffer, file.originalname);
+    } catch (parseError) {
+        logger.error('Failed to parse workbook for upload', {
+            error: parseError.message,
+            owner_id,
+            fileName: file.originalname,
+        });
+        return res.status(400).json({ error: 'Failed to parse workbook file' });
+    }
+
+    try {
+        const currentStorageBytes = await getUserStorageUsedBytes(pool, owner_id);
+        const incomingStorageBytes = Number(file.size || 0);
+        const projectedStorageBytes = currentStorageBytes + incomingStorageBytes;
+
+        if (projectedStorageBytes > STORAGE_LIMIT_BYTES) {
+            const remainingBytes = Math.max(0, STORAGE_LIMIT_BYTES - currentStorageBytes);
+            return res.status(409).json({
+                error: 'Storage limit exceeded. Delete previous files to proceed.',
+                code: 'STORAGE_LIMIT_EXCEEDED',
+                storage: {
+                    usedBytes: currentStorageBytes,
+                    incomingBytes: incomingStorageBytes,
+                    limitBytes: STORAGE_LIMIT_BYTES,
+                    remainingBytes,
+                    projectedBytes: projectedStorageBytes,
+                },
+            });
+        }
+    } catch (quotaError) {
+        logger.error('Failed to validate storage quota', {
+            error: quotaError.message,
+            owner_id,
+            fileName: file.originalname,
+        });
+        return res.status(500).json({ error: 'Failed to validate storage quota' });
+    }
+
     let storageInfo = { mode: (process.env.UPLOAD_STORAGE_MODE || 'db').toLowerCase(), localPath: null };
     try {
         storageInfo = await persistUploadedFile(file);
@@ -1026,15 +1579,13 @@ app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), requireR
 
         // 1. Create Workbook in DB
         const wbResult = await client.query(
-            'INSERT INTO workbooks (name, owner_id) VALUES ($1, $2) RETURNING *',
-            [file.originalname, owner_id]
+            'INSERT INTO workbooks (name, owner_id, storage_bytes) VALUES ($1, $2, $3) RETURNING *',
+            [file.originalname, owner_id, Number(file.size || 0)]
         );
         const newWorkbook = wbResult.rows[0];
 
         // 2. Process Excel file
         logger.info('Processing Excel file', { workbookId: newWorkbook.id, fileName: file.originalname });
-
-        const parsedData = await fileProcessor.processExcelFile(file.buffer, file.originalname);
 
         // 3. Create Initial Commit
         const hash = crypto.createHash('sha256')

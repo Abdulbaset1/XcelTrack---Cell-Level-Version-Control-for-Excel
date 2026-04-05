@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS workbooks (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     owner_id VARCHAR(255) NOT NULL,
+    storage_bytes BIGINT DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -118,5 +119,21 @@ CREATE TABLE IF NOT EXISTS notifications (
     message TEXT NOT NULL,
     metadata JSONB,
     is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_usage_logs (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(255) REFERENCES users(firebase_uid) ON DELETE SET NULL,
+    workbook_id INT REFERENCES workbooks(id) ON DELETE SET NULL,
+    endpoint VARCHAR(100) NOT NULL,
+    provider VARCHAR(50),
+    model VARCHAR(100),
+    prompt_tokens INT DEFAULT 0,
+    completion_tokens INT DEFAULT 0,
+    total_tokens INT DEFAULT 0,
+    estimated_cost_usd NUMERIC(12, 6) DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'success',
+    metadata JSONB,
     created_at TIMESTAMP DEFAULT NOW()
 );

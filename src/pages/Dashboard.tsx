@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
   getWorkbooks,
+  getProfileSummary,
   uploadWorkbook,
   downloadWorkbook,
   getUserCommits,
@@ -36,6 +37,30 @@ const Dashboard: React.FC = () => {
   const [isLoadingCollaborators, setIsLoadingCollaborators] = useState(false);
   const [removingCollaboratorId, setRemovingCollaboratorId] = useState<string | null>(null);
   const [isDeletingFileId, setIsDeletingFileId] = useState<number | null>(null);
+  const [storageStats, setStorageStats] = useState({
+    usedBytes: 0,
+    limitBytes: 500 * 1024 * 1024,
+    usagePercent: 0,
+  });
+
+  const formatBytes = React.useCallback((bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+  }, []);
+
+  const getStorageBarShade = React.useCallback((percent: number) => {
+    if (percent >= 90) return 'bg-red-500';
+    if (percent >= 70) return 'bg-amber-500';
+    if (percent >= 40) return 'bg-blue-500';
+    return 'bg-emerald-500';
+  }, []);
 
   const fetchFiles = React.useCallback(async () => {
     if (user) {
@@ -60,6 +85,20 @@ const Dashboard: React.FC = () => {
       setRecentActivity(response.commits || []);
     } catch (activityError) {
       console.warn('Failed to fetch recent activity:', activityError);
+    }
+  }, [user]);
+
+  const fetchProfileStorage = React.useCallback(async () => {
+    if (!user) return;
+    try {
+      const response = await getProfileSummary(user.uid, user.uid);
+      setStorageStats({
+        usedBytes: response.stats.storageUsedBytes,
+        limitBytes: response.stats.storageLimitBytes,
+        usagePercent: response.stats.storageUsagePercent,
+      });
+    } catch (storageError) {
+      console.warn('Failed to fetch storage summary:', storageError);
     }
   }, [user]);
 
@@ -91,16 +130,18 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     fetchFiles();
     fetchRecentActivity();
+    fetchProfileStorage();
 
     const intervalId = window.setInterval(() => {
       fetchFiles();
       fetchRecentActivity();
+      fetchProfileStorage();
     }, 10000);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [fetchFiles, fetchRecentActivity]);
+  }, [fetchFiles, fetchRecentActivity, fetchProfileStorage]);
 
   useEffect(() => {
     if (selectedFileForShare) {
@@ -114,7 +155,9 @@ const Dashboard: React.FC = () => {
   const quickStats = {
     totalFiles: files.length,
     activeCollaborations: files.filter((file) => !file.is_owner || (file.collaborator_count || 0) > 0).length,
-    storageUsed: '2.3 GB',
+    storageUsed: formatBytes(storageStats.usedBytes),
+    storageLimit: formatBytes(storageStats.limitBytes),
+    storageUsagePercent: storageStats.usagePercent,
     lastLogin: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   };
 
@@ -278,7 +321,7 @@ const Dashboard: React.FC = () => {
                 {/* Tilted Dark Background - Subtle */}
                 <div className="absolute inset-0 bg-gray-400 rounded-2xl transform rotate-1 translate-y-1 translate-x-1 -z-10"></div>
 
-                <div className={`${cardStyle} p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
+                <div className={`${cardStyle} h-full p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-[var(--text-secondary)] text-sm font-medium">Total Files</p>
@@ -297,7 +340,7 @@ const Dashboard: React.FC = () => {
                 {/* Tilted Dark Background - Subtle */}
                 <div className="absolute inset-0 bg-gray-400 rounded-2xl transform rotate-1 translate-y-1 translate-x-1 -z-10"></div>
 
-                <div className={`${cardStyle} p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
+                <div className={`${cardStyle} h-full p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-[#535F80] text-sm font-medium">Active Collaborations</p>
@@ -316,17 +359,27 @@ const Dashboard: React.FC = () => {
                 {/* Tilted Dark Background - Subtle */}
                 <div className="absolute inset-0 bg-gray-400 rounded-2xl transform rotate-1 translate-y-1 translate-x-1 -z-10"></div>
 
-                <div className={`${cardStyle} p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
+                <div className={`${cardStyle} h-full p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-[#535F80] text-sm font-medium">Storage Used</p>
                       <p className="text-3xl font-bold text-[#051747]">{quickStats.storageUsed}</p>
+                      <p className="text-xs text-[#535F80] mt-1">of {quickStats.storageLimit}</p>
                     </div>
                     <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center border border-indigo-200">
                       <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
                       </svg>
                     </div>
+                  </div>
+                  <div className="mt-4">
+                    <div className="w-full h-2 rounded-full bg-gray-200 overflow-hidden">
+                      <div
+                        className={`h-full ${getStorageBarShade(quickStats.storageUsagePercent)}`}
+                        style={{ width: `${Math.max(0, Math.min(100, quickStats.storageUsagePercent))}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-[#535F80] mt-2">{quickStats.storageUsagePercent}% used</p>
                   </div>
                 </div>
               </div>
@@ -335,7 +388,7 @@ const Dashboard: React.FC = () => {
                 {/* Tilted Dark Background - Subtle */}
                 <div className="absolute inset-0 bg-gray-400 rounded-2xl transform rotate-1 translate-y-1 translate-x-1 -z-10"></div>
 
-                <div className={`${cardStyle} p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
+                <div className={`${cardStyle} h-full p-6 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]`}>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-[#535F80] text-sm font-medium">Last Login</p>
@@ -421,7 +474,11 @@ const Dashboard: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex items-center space-x-4">
-                          <span className="text-sm text-[#535F80]">{file.size || 'N/A'}</span>
+                          <span className="text-sm text-[#535F80]">
+                            {(file.size !== null && file.size !== undefined) || (file.storage_bytes !== null && file.storage_bytes !== undefined)
+                              ? formatBytes(Number(file.size ?? file.storage_bytes ?? 0))
+                              : 'N/A'}
+                          </span>
                           <button
                             onClick={(e) => handleDownload(e, file.id, file.name)}
                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
