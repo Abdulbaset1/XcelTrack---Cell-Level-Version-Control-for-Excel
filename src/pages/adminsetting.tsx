@@ -2,12 +2,16 @@
 import React, { useState } from 'react';
 import { FaSave, FaKey } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { getProfileSummary, updateAdminUser } from '../services/api';
+import { auth } from '../firebase';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 
 interface AdminProfile {
     name: string;
     email: string;
-
-
+    role: string;
+    createdAt: string;
     lastLogin: string;
 }
 
@@ -15,32 +19,80 @@ interface AdminProfile {
 
 const SettingsPage: React.FC = () => {
     const { user } = useAuth();
+    const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
     const [profile, setProfile] = useState<AdminProfile>({
         name: user?.displayName || user?.name || 'Admin User',
         email: user?.email || 'admin@xceltrack.com',
-        lastLogin: '2025-12-07 14:23:15',
+        role: user?.role || 'admin',
+        createdAt: user?.createdAt || '',
+        lastLogin: 'Not available',
     });
 
     const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
     const [showPasswordForm, setShowPasswordForm] = useState(false);
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
+    const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
     const [fieldErrors, setFieldErrors] = useState({ current: '', new: '', confirm: '' });
 
     React.useEffect(() => {
-        if (user) {
-            setProfile(prev => ({
-                ...prev,
-                name: user.displayName || user.name || prev.name,
-                email: user.email || prev.email,
-            }));
-        }
-    }, [user]);
+        const loadAdminProfile = async () => {
+            if (!user?.uid) {
+                return;
+            }
 
-    const handleProfileUpdate = () => {
-        setSuccessMessage('Profile updated successfully!');
-        setTimeout(() => setSuccessMessage(''), 3000);
+            try {
+                const summary = await getProfileSummary(user.uid, user.uid);
+                setProfile((prev) => ({
+                    ...prev,
+                    name: summary.user.name || prev.name,
+                    email: summary.user.email || prev.email,
+                    role: summary.user.role || prev.role,
+                    createdAt: summary.user.created_at || prev.createdAt,
+                }));
+            } catch (profileError: any) {
+                showToast(profileError?.message || 'Failed to load admin profile', 'error');
+            }
+        };
+
+        loadAdminProfile();
+    }, [user?.uid, showToast]);
+
+    const handleProfileUpdate = async () => {
+        if (!user?.uid) {
+            showToast('Please login again to update profile', 'warning');
+            return;
+        }
+
+        const trimmedName = profile.name.trim();
+        const trimmedEmail = profile.email.trim();
+
+        if (!trimmedName || !trimmedEmail) {
+            setErrorMessage('Name and email are required');
+            return;
+        }
+
+        setIsSavingProfile(true);
+        setErrorMessage('');
+        try {
+            await updateAdminUser(user.uid, user.uid, {
+                name: trimmedName,
+                email: trimmedEmail,
+                role: profile.role || user.role || 'admin',
+            });
+
+            setSuccessMessage('Profile updated successfully!');
+            showToast('Admin profile changes saved', 'success');
+            setTimeout(() => setSuccessMessage(''), 3000);
+        } catch (updateError: any) {
+            const message = updateError?.message || 'Failed to update profile';
+            setErrorMessage(message);
+            showToast(message, 'error');
+        } finally {
+            setIsSavingProfile(false);
+        }
     };
 
     // Real-time validation for password fields
@@ -72,7 +124,7 @@ const SettingsPage: React.FC = () => {
         setFieldErrors(errors);
     }, [passwordData, focusedField]);
 
-    const handlePasswordChange = () => {
+    const handlePasswordChange = async () => {
         setErrorMessage('');
         if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
             setErrorMessage('All password fields are required');
@@ -86,10 +138,38 @@ const SettingsPage: React.FC = () => {
             setErrorMessage('New password must be at least 8 characters');
             return;
         }
-        setSuccessMessage('Password changed successfully!');
-        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-        setShowPasswordForm(false);
-        setTimeout(() => setSuccessMessage(''), 3000);
+
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser || !firebaseUser.email) {
+            setErrorMessage('Password change is only available for email/password accounts');
+            return;
+        }
+
+        setIsUpdatingPassword(true);
+        try {
+            const credential = EmailAuthProvider.credential(firebaseUser.email, passwordData.currentPassword);
+            await reauthenticateWithCredential(firebaseUser, credential);
+            await updatePassword(firebaseUser, passwordData.newPassword);
+
+            setSuccessMessage('Password changed successfully!');
+            showToast('Password updated successfully', 'success');
+            setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+            setShowPasswordForm(false);
+            setTimeout(() => setSuccessMessage(''), 3000);
+        } catch (passwordError: any) {
+            const code = passwordError?.code || '';
+            const friendlyMessage = code === 'auth/wrong-password'
+                ? 'Current password is incorrect'
+                : code === 'auth/too-many-requests'
+                    ? 'Too many attempts. Please wait and try again.'
+                    : code === 'auth/requires-recent-login'
+                        ? 'Please log out and log in again before changing password'
+                        : 'Failed to update password';
+            setErrorMessage(friendlyMessage);
+            showToast(friendlyMessage, 'error');
+        } finally {
+            setIsUpdatingPassword(false);
+        }
     };
 
     return (
@@ -186,13 +266,16 @@ const SettingsPage: React.FC = () => {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <div>
                                         <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Last Login</div>
-                                        <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{profile.lastLogin}</div>
+                                        <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                                            {profile.createdAt ? new Date(profile.createdAt).toLocaleString() : profile.lastLogin}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <button
                                 onClick={handleProfileUpdate}
+                                disabled={isSavingProfile}
                                 style={{
                                     padding: '0.75rem 1.5rem',
                                     background: 'linear-gradient(135deg, rgba(47, 94, 154, 1) 0%, rgba(47, 94, 154, 0.9) 100%)',
@@ -221,7 +304,7 @@ const SettingsPage: React.FC = () => {
                                 }}
                             >
                                 {/* @ts-ignore */}
-                                <FaSave size={16} /> Save Changes
+                                <FaSave size={16} /> {isSavingProfile ? 'Saving...' : 'Save Changes'}
                             </button>
                         </div>
                     )}
@@ -305,18 +388,19 @@ const SettingsPage: React.FC = () => {
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                                             <button
                                                 onClick={handlePasswordChange}
+                                                disabled={isUpdatingPassword}
                                                 style={{
                                                     flex: 1,
                                                     padding: '0.6rem',
-                                                    background: '#10b981',
+                                                    background: isUpdatingPassword ? '#6b7280' : '#10b981',
                                                     color: 'white',
                                                     border: 'none',
                                                     borderRadius: '6px',
-                                                    cursor: 'pointer',
+                                                    cursor: isUpdatingPassword ? 'not-allowed' : 'pointer',
                                                     fontWeight: 600,
                                                 }}
                                             >
-                                                Update Password
+                                                {isUpdatingPassword ? 'Updating...' : 'Update Password'}
                                             </button>
                                             <button
                                                 onClick={() => setShowPasswordForm(false)}

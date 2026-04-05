@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { FaCamera, FaUser, FaEnvelope } from 'react-icons/fa';
+import { getProfileSummary } from '../services/api';
 // import { MdEdit } from 'react-icons/md'; // Removed as edit option is removed
 
 interface AdminProfileData {
@@ -16,6 +18,28 @@ interface AdminProfileData {
 
 const AdminProfile: React.FC = () => {
     const { user } = useAuth();
+    const { showToast } = useToast();
+    const [summaryUser, setSummaryUser] = React.useState<{
+        uid: string;
+        email: string;
+        name: string;
+        role: string;
+        created_at: string;
+    } | null>(null);
+
+    React.useEffect(() => {
+        const loadProfile = async () => {
+            if (!user?.uid) return;
+            try {
+                const response = await getProfileSummary(user.uid, user.uid);
+                setSummaryUser(response.user);
+            } catch (error: any) {
+                showToast(error?.message || 'Failed to load admin profile', 'error');
+            }
+        };
+
+        loadProfile();
+    }, [user?.uid, showToast]);
 
     // We can show a loading state if user is strictly null, but generally this page is protected.
     // However, to be safe:
@@ -27,14 +51,16 @@ const AdminProfile: React.FC = () => {
         : 'U';
 
     const profileData: AdminProfileData = {
-        id: user.uid,
-        username: user.displayName || 'Admin User',
-        email: user.email || '',
-        department: 'Administration', // Hardcoded or fetch if available
+        id: summaryUser?.uid || user.uid,
+        username: summaryUser?.name || user.displayName || 'Admin User',
+        email: summaryUser?.email || user.email || '',
+        department: 'Administration',
         profileImage: initials,
-        joinDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A',
-        lastLogin: new Date().toLocaleString(), // Approximate 'now' since they are viewing it
-        role: user.role || 'Admin'
+        joinDate: summaryUser?.created_at
+            ? new Date(summaryUser.created_at).toLocaleDateString()
+            : user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A',
+        lastLogin: 'Not available',
+        role: summaryUser?.role || user.role || 'Admin'
     };
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {

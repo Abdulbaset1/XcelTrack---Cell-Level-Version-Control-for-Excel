@@ -137,6 +137,20 @@ const createTables = async () => {
         `);
         console.log('Users table ready');
 
+        // User Settings Table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id VARCHAR(255) PRIMARY KEY REFERENCES users(firebase_uid) ON DELETE CASCADE,
+                auto_save_interval INT DEFAULT 10,
+                version_history_limit INT DEFAULT 50,
+                email_alerts BOOLEAN DEFAULT TRUE,
+                collaboration_invites BOOLEAN DEFAULT TRUE,
+                public_profile BOOLEAN DEFAULT TRUE,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+        console.log('User settings table ready');
+
         // Workbooks Table
         await pool.query(`
             CREATE TABLE IF NOT EXISTS workbooks (
@@ -1498,6 +1512,119 @@ app.put('/api/profile', requireRequester, async (req, res) => {
     }
 });
 
+// Get persisted user settings
+app.get('/api/settings', requireRequester, async (req, res) => {
+    const targetUserId = req.query.user_id || req.requesterId;
+
+    if (req.requesterRole !== 'admin' && targetUserId !== req.requesterId) {
+        return res.status(403).json({ error: 'Access denied for requested settings', code: 'SETTINGS_FORBIDDEN' });
+    }
+
+    try {
+        const settingsResult = await pool.query(
+            `SELECT
+                user_id,
+                auto_save_interval,
+                version_history_limit,
+                email_alerts,
+                collaboration_invites,
+                public_profile,
+                updated_at
+             FROM user_settings
+             WHERE user_id = $1`,
+            [targetUserId]
+        );
+
+        if (settingsResult.rows.length === 0) {
+            const insertResult = await pool.query(
+                `INSERT INTO user_settings (user_id)
+                 VALUES ($1)
+                 RETURNING user_id, auto_save_interval, version_history_limit, email_alerts, collaboration_invites, public_profile, updated_at`,
+                [targetUserId]
+            );
+
+            return res.json({ settings: insertResult.rows[0] });
+        }
+
+        return res.json({ settings: settingsResult.rows[0] });
+    } catch (error) {
+        logger.error('Error fetching user settings', {
+            error: error.message,
+            requesterId: req.requesterId,
+            targetUserId,
+        });
+        return res.status(500).json({ error: 'Failed to fetch settings' });
+    }
+});
+
+// Update persisted user settings
+app.put('/api/settings', requireRequester, async (req, res) => {
+    const targetUserId = req.body.user_id || req.requesterId;
+    const {
+        auto_save_interval,
+        version_history_limit,
+        email_alerts,
+        collaboration_invites,
+        public_profile,
+    } = req.body;
+
+    if (req.requesterRole !== 'admin' && targetUserId !== req.requesterId) {
+        return res.status(403).json({ error: 'Access denied for requested settings update', code: 'SETTINGS_UPDATE_FORBIDDEN' });
+    }
+
+    const autoSaveIntervalNum = Number(auto_save_interval);
+    const versionHistoryLimitNum = Number(version_history_limit);
+
+    if (!Number.isFinite(autoSaveIntervalNum) || autoSaveIntervalNum < 1 || autoSaveIntervalNum > 120) {
+        return res.status(400).json({ error: 'auto_save_interval must be between 1 and 120', code: 'INVALID_AUTO_SAVE_INTERVAL' });
+    }
+
+    if (!Number.isFinite(versionHistoryLimitNum) || versionHistoryLimitNum < 1 || versionHistoryLimitNum > 500) {
+        return res.status(400).json({ error: 'version_history_limit must be between 1 and 500', code: 'INVALID_VERSION_HISTORY_LIMIT' });
+    }
+
+    try {
+        const updateResult = await pool.query(
+            `INSERT INTO user_settings (
+                user_id,
+                auto_save_interval,
+                version_history_limit,
+                email_alerts,
+                collaboration_invites,
+                public_profile,
+                updated_at
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             ON CONFLICT (user_id)
+             DO UPDATE SET
+                auto_save_interval = EXCLUDED.auto_save_interval,
+                version_history_limit = EXCLUDED.version_history_limit,
+                email_alerts = EXCLUDED.email_alerts,
+                collaboration_invites = EXCLUDED.collaboration_invites,
+                public_profile = EXCLUDED.public_profile,
+                updated_at = NOW()
+             RETURNING user_id, auto_save_interval, version_history_limit, email_alerts, collaboration_invites, public_profile, updated_at`,
+            [
+                targetUserId,
+                autoSaveIntervalNum,
+                versionHistoryLimitNum,
+                Boolean(email_alerts),
+                Boolean(collaboration_invites),
+                Boolean(public_profile),
+            ]
+        );
+
+        return res.json({ settings: updateResult.rows[0] });
+    } catch (error) {
+        logger.error('Error updating user settings', {
+            error: error.message,
+            requesterId: req.requesterId,
+            targetUserId,
+        });
+        return res.status(500).json({ error: 'Failed to update settings' });
+    }
+});
+
 // Configure Multer for memory storage
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -1826,6 +1953,21 @@ app.post('/api/workbooks/:id/collaborators', requireRequester, loadWorkbookAcces
 
         if (userResult.rows.length === 0) {
             return res.status(404).json({ error: 'Collaborator user not found' });
+        }
+
+        const visibilityResult = await pool.query(
+            `SELECT COALESCE(public_profile, TRUE) AS public_profile
+             FROM user_settings
+             WHERE user_id = $1`,
+            [collaborator_id]
+        );
+
+        const isPublicProfile = visibilityResult.rows.length === 0
+            ? true
+            : visibilityResult.rows[0].public_profile === true;
+
+        if (!isPublicProfile) {
+            return res.status(403).json({ error: 'User has a private profile and cannot be added via search', code: 'COLLABORATOR_PROFILE_PRIVATE' });
         }
 
         const insertResult = await pool.query(
@@ -2301,7 +2443,20 @@ app.post('/api/workbooks/:id/conflicts/:conflictId/resolve', requireRequester, l
 // Get all users (from Postgres)
 app.get('/api/users', requireRequester, async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
+        if (req.requesterRole === 'admin') {
+            const adminResult = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
+            return res.json(adminResult.rows);
+        }
+
+        const result = await pool.query(
+            `SELECT u.*
+             FROM users u
+             LEFT JOIN user_settings us ON us.user_id = u.firebase_uid
+             WHERE u.firebase_uid = $1
+                OR COALESCE(us.public_profile, TRUE) = TRUE
+             ORDER BY u.created_at DESC`,
+            [req.requesterId]
+        );
         res.json(result.rows);
     } catch (error) {
         console.error('Error fetching users:', error);
@@ -2310,7 +2465,7 @@ app.get('/api/users', requireRequester, async (req, res) => {
 });
 
 // Create User (Admin)
-app.post('/api/admin/users', adminLimiter, async (req, res) => {
+app.post('/api/admin/users', requireRequester, requireAdmin, adminLimiter, async (req, res) => {
     const { email, password, name, role } = req.body;
 
     try {
@@ -2341,7 +2496,7 @@ app.post('/api/admin/users', adminLimiter, async (req, res) => {
 });
 
 // Update User (Admin)
-app.put('/api/admin/users/:uid', adminLimiter, async (req, res) => {
+app.put('/api/admin/users/:uid', requireRequester, requireAdmin, adminLimiter, async (req, res) => {
     const { uid } = req.params;
     const { email, name, role } = req.body;
 
@@ -2384,7 +2539,7 @@ app.put('/api/admin/users/:uid', adminLimiter, async (req, res) => {
 });
 
 // Delete User (Admin)
-app.delete('/api/admin/users/:uid', adminLimiter, async (req, res) => {
+app.delete('/api/admin/users/:uid', requireRequester, requireAdmin, adminLimiter, async (req, res) => {
     const { uid } = req.params;
 
     try {
@@ -2414,6 +2569,17 @@ app.delete('/api/admin/users/:uid', adminLimiter, async (req, res) => {
         logger.error('Error deleting user', { error: error.message, uid });
         await logAuditEvent(null, null, 'USER_DELETE_FAILED', { targetUid: uid, error: error.message }, req.ip);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// List Users (Admin)
+app.get('/api/admin/users', requireRequester, requireAdmin, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
+        res.json({ users: result.rows });
+    } catch (error) {
+        logger.error('Error fetching admin users list', { error: error.message, requesterId: req.requesterId });
+        res.status(500).json({ error: 'Failed to fetch users' });
     }
 });
 

@@ -1,13 +1,10 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 interface SettingsState {
     autoSaveInterval: string;
-    diffHighlightColor: string;
     versionHistoryLimit: number;
     emailAlerts: boolean;
     collaborationInvites: boolean;
-    weeklyDigest: boolean;
-    twoFactorAuth: boolean;
     publicProfile: boolean;
 }
 
@@ -19,12 +16,9 @@ interface SettingsContextType {
 
 const defaultSettings: SettingsState = {
     autoSaveInterval: '10',
-    diffHighlightColor: '#3B82F6',
     versionHistoryLimit: 50,
     emailAlerts: true,
     collaborationInvites: true,
-    weeklyDigest: false,
-    twoFactorAuth: false,
     publicProfile: true,
 };
 
@@ -43,21 +37,26 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return defaultSettings;
     });
 
-    const updateSettings = (newSettings: Partial<SettingsState>) => {
+    const updateSettings = useCallback((newSettings: Partial<SettingsState>) => {
         setSettings(prev => {
             const updated = { ...prev, ...newSettings };
             localStorage.setItem('xceltrack_settings', JSON.stringify(updated));
             return updated;
         });
-    };
+    }, []);
 
-    const resetSettings = () => {
+    const resetSettings = useCallback(() => {
         setSettings(defaultSettings);
         localStorage.setItem('xceltrack_settings', JSON.stringify(defaultSettings));
-    };
+    }, []);
+
+    const contextValue = useMemo(
+        () => ({ settings, updateSettings, resetSettings }),
+        [settings, updateSettings, resetSettings]
+    );
 
     return (
-        <SettingsContext.Provider value={{ settings, updateSettings, resetSettings }}>
+        <SettingsContext.Provider value={contextValue}>
             {children}
         </SettingsContext.Provider>
     );

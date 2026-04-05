@@ -600,4 +600,69 @@ describe('API guards and business rules', () => {
             })
         );
     });
+
+    test('hides private profiles from users search list', async () => {
+        const querySpy = jest.spyOn(pool, 'query').mockImplementation(async (sql, params) => {
+            if (sql.includes('SELECT firebase_uid, email, role FROM users')) {
+                return { rows: [{ firebase_uid: 'owner-visible', email: 'owner@test.com', role: 'user' }] };
+            }
+
+            if (sql.includes('FROM users u') && sql.includes('LEFT JOIN user_settings us')) {
+                expect(params).toEqual(['owner-visible']);
+                return {
+                    rows: [
+                        { firebase_uid: 'owner-visible', email: 'owner@test.com', name: 'Owner', role: 'user' },
+                        { firebase_uid: 'public-user', email: 'public@test.com', name: 'Public User', role: 'user' },
+                    ],
+                };
+            }
+
+            throw new Error(`Unexpected query in private profile search test: ${sql}`);
+        });
+
+        const response = await request(app)
+            .get('/api/users')
+            .query({ requester_id: 'owner-visible' });
+
+        expect(response.status).toBe(200);
+        expect(Array.isArray(response.body)).toBe(true);
+        expect(response.body.map((u) => u.firebase_uid)).toEqual(['owner-visible', 'public-user']);
+        expect(querySpy).toHaveBeenCalled();
+    });
+
+    test('blocks adding collaborator when target profile is private', async () => {
+        const querySpy = jest.spyOn(pool, 'query').mockImplementation(async (sql) => {
+            if (sql.includes('SELECT firebase_uid, email, role FROM users')) {
+                return { rows: [{ firebase_uid: 'owner-privacy', email: 'ownerprivacy@test.com', role: 'user' }] };
+            }
+
+            if (sql.includes('FROM workbooks w')) {
+                return {
+                    rows: [{ id: 404, name: 'Private Rules', owner_id: 'owner-privacy', is_collaborator: false }],
+                };
+            }
+
+            if (sql.includes('SELECT id, owner_id FROM workbooks WHERE id = $1')) {
+                return { rows: [{ id: 404, owner_id: 'owner-privacy' }] };
+            }
+
+            if (sql.includes('SELECT firebase_uid, name, email FROM users WHERE firebase_uid = $1')) {
+                return { rows: [{ firebase_uid: 'private-user', name: 'Private User', email: 'private@test.com' }] };
+            }
+
+            if (sql.includes('SELECT COALESCE(public_profile, TRUE) AS public_profile')) {
+                return { rows: [{ public_profile: false }] };
+            }
+
+            throw new Error(`Unexpected query in private collaborator add test: ${sql}`);
+        });
+
+        const response = await request(app)
+            .post('/api/workbooks/404/collaborators')
+            .send({ requester_id: 'owner-privacy', collaborator_id: 'private-user' });
+
+        expect(response.status).toBe(403);
+        expect(response.body.code).toBe('COLLABORATOR_PROFILE_PRIVATE');
+        expect(querySpy).toHaveBeenCalled();
+    });
 });

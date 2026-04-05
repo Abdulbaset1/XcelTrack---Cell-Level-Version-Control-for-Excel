@@ -93,6 +93,54 @@ export const updateProfileDetails = async (
     return response.json();
 };
 
+export interface UserSettingsResponse {
+    settings: {
+        user_id: string;
+        auto_save_interval: number;
+        version_history_limit: number;
+        email_alerts: boolean;
+        collaboration_invites: boolean;
+        public_profile: boolean;
+        updated_at: string;
+    };
+}
+
+export const getUserSettings = async (requesterId: string, userId?: string): Promise<UserSettingsResponse> => {
+    const params = new URLSearchParams({ requester_id: requesterId });
+    if (userId) params.set('user_id', userId);
+
+    const response = await fetch(`${API_URL}/settings?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch settings');
+    }
+    return response.json();
+};
+
+export const updateUserSettings = async (
+    requesterId: string,
+    payload: {
+        user_id?: string;
+        auto_save_interval: number;
+        version_history_limit: number;
+        email_alerts: boolean;
+        collaboration_invites: boolean;
+        public_profile: boolean;
+    }
+): Promise<UserSettingsResponse> => {
+    const response = await fetch(`${API_URL}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, ...payload }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update settings');
+    }
+    return response.json();
+};
+
 export interface RegisteredUser {
     firebase_uid: string;
     email: string;
@@ -696,6 +744,26 @@ export interface AdminAnalytics {
     recentAuditLogs: AuditLog[];
 }
 
+export interface AdminManagedUser {
+    firebase_uid: string;
+    email: string;
+    name: string;
+    role: 'admin' | 'user' | string;
+    created_at?: string;
+}
+
+export interface AdminComplianceReport {
+    reportGeneratedAt: string;
+    auditLogging: {
+        status: string;
+        totalLogs: number;
+        lastLoggedAction: string;
+    };
+    userDistribution: Record<string, number>;
+    retentionPolicy: string;
+    backupStatus: string;
+}
+
 export interface InAppNotification {
     id: number;
     user_id: string;
@@ -764,6 +832,58 @@ export const getAuditLogsExportUrl = (
 export const getAdminAnalytics = async (requesterId: string): Promise<AdminAnalytics> => {
     const response = await fetch(`${API_URL}/admin/analytics?requester_id=${requesterId}`);
     if (!response.ok) throw new Error('Failed to fetch analytics');
+    return response.json();
+};
+
+export const getAdminUsers = async (requesterId: string): Promise<{ users: AdminManagedUser[] }> => {
+    const response = await fetch(`${API_URL}/admin/users?requester_id=${requesterId}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch admin users');
+    }
+    return response.json();
+};
+
+export const updateAdminUser = async (
+    requesterId: string,
+    uid: string,
+    payload: { email: string; name: string; role: string }
+): Promise<{ message: string; user: AdminManagedUser }> => {
+    const response = await fetch(`${API_URL}/admin/users/${uid}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, ...payload }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update user');
+    }
+
+    return response.json();
+};
+
+export const deleteAdminUser = async (requesterId: string, uid: string): Promise<{ message: string }> => {
+    const response = await fetch(`${API_URL}/admin/users/${uid}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete user');
+    }
+
+    return response.json();
+};
+
+export const getAdminComplianceReport = async (requesterId: string): Promise<AdminComplianceReport> => {
+    const response = await fetch(`${API_URL}/admin/compliance-report?requester_id=${requesterId}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch compliance report');
+    }
     return response.json();
 };
 

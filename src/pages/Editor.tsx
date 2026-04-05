@@ -14,6 +14,7 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import { FiChevronLeft, FiChevronRight, FiSidebar } from 'react-icons/fi';
 import { Commit } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from '../contexts/ToastContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { uploadWorkbook, getWorkbookData, createCommit, getCommitDetails, getCommitSnapshot, getCommitHistory, createWorksheet, renameWorksheet, deleteWorksheet, reorderWorksheets, getWorkbookDiff, resolveWorkbookConflict, getWorkbookConflicts, explainFormula, detectWorkbookErrors, analyzeWorkbookData, askPromptAI, CommitDiff } from '../services/api';
@@ -29,6 +30,7 @@ const Editor: React.FC = () => {
   const navigate = useNavigate();
   const editorRef = React.useRef<ExcelEditorRef>(null);
   const { user } = useAuth();
+  const { settings } = useSettings();
   const { showToast } = useToast();
   const { joinWorkbook, leaveWorkbook, sendCursorMove, sendCellEdit, activeUsers, cursors, onCellChange, onConflict, onConflictResolved, onCellEditRejected, onCellEditAccepted } = useWebSocket();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -67,6 +69,14 @@ const Editor: React.FC = () => {
   const cellVersionsRef = React.useRef<Map<string, number>>(new Map());
 
   const [error, setError] = useState<string | null>(null);
+
+  const autoSaveIntervalMinutes = React.useMemo(() => {
+    const parsed = Number(settings.autoSaveInterval);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      return null;
+    }
+    return parsed;
+  }, [settings.autoSaveInterval]);
 
   const hydratePendingConflicts = React.useCallback(async () => {
     if (!id || !user?.uid) return [];
@@ -331,7 +341,7 @@ const Editor: React.FC = () => {
   }, [id, user, sendCellEdit, activeWorksheetId]);
 
 
-  const handleSave = React.useCallback(async (data: any) => {
+  const handleSave = React.useCallback(async (data: any, source: 'manual' | 'auto' = 'manual') => {
     console.log('Saving workbook:', data);
 
     if (!id || !user) {
@@ -339,10 +349,19 @@ const Editor: React.FC = () => {
       return;
     }
 
+    if (!hasLocalEdits) {
+      if (source === 'manual') {
+        showToast('No changes to save', 'info');
+      }
+      return;
+    }
+
     if (conflicts.length > 0) {
-      setSyncStatus('error');
-      setIsConflictViewerOpen(true);
-      showToast('Resolve active conflicts before saving', 'warning');
+      if (source === 'manual') {
+        setSyncStatus('error');
+        setIsConflictViewerOpen(true);
+        showToast('Resolve active conflicts before saving', 'warning');
+      }
       return;
     }
 
@@ -358,7 +377,9 @@ const Editor: React.FC = () => {
         latestCommit &&
         latestCommit.id !== baseCommitId
       ) {
-        showToast('A newer version exists. Continuing save with cell-level conflict handling.', 'info');
+        if (source === 'manual') {
+          showToast('A newer version exists. Continuing save with cell-level conflict handling.', 'info');
+        }
       }
     } catch (versionCheckError) {
       console.warn('Could not verify latest commit before save:', versionCheckError);
@@ -370,7 +391,7 @@ const Editor: React.FC = () => {
       const commitResponse = await createCommit(
         workbookId,
         user.uid,
-        'Manual save'
+        source === 'auto' ? `Auto-save (${autoSaveIntervalMinutes} min interval)` : 'Manual save'
       );
 
       const savedCommit = commitResponse.commit;
@@ -378,7 +399,11 @@ const Editor: React.FC = () => {
       setSyncStatus('synced');
       setBaseCommitId(savedCommit?.id ?? baseCommitId);
       setHasLocalEdits(false);
-      showToast(`Saved! Commit: ${savedCommit.hash.substring(0, 8)}`, 'success');
+      if (source === 'manual') {
+        showToast(`Saved! Commit: ${savedCommit.hash.substring(0, 8)}`, 'success');
+      } else {
+        showToast(`Auto-saved (${savedCommit.hash.substring(0, 8)})`, 'success');
+      }
       // Refresh history if sidebar is open
       if (showVersionHistory) {
         // This is a bit hacky, but history timeline refreshes on workbookId change or manual trigger
@@ -390,15 +415,47 @@ const Editor: React.FC = () => {
 
       // Handle server-side conflict blocking (409 PENDING_CONFLICTS_EXIST)
       if (error.message?.includes('conflicts are pending') || error.message?.includes('PENDING_CONFLICTS_EXIST')) {
-        showToast('⚠️ Cannot save — pending conflicts must be resolved first.', 'warning');
+        if (source === 'manual') {
+          showToast('⚠️ Cannot save — pending conflicts must be resolved first.', 'warning');
+        }
         // Re-hydrate conflicts from server in case we lost track
         await hydratePendingConflicts();
-        setIsConflictViewerOpen(true);
+        if (source === 'manual') {
+          setIsConflictViewerOpen(true);
+        }
       } else {
-        showToast('Failed to save workbook', 'error');
+        showToast(source === 'auto' ? 'Auto-save failed' : 'Failed to save workbook', 'error');
       }
     }
-  }, [id, user, showToast, showVersionHistory, conflicts.length, hasLocalEdits, baseCommitId, hydratePendingConflicts]);
+  }, [id, user, showToast, showVersionHistory, conflicts.length, hasLocalEdits, baseCommitId, hydratePendingConflicts, autoSaveIntervalMinutes]);
+
+  useEffect(() => {
+    if (!id || !user?.uid || !autoSaveIntervalMinutes) {
+      return;
+    }
+
+    const intervalMs = autoSaveIntervalMinutes * 60 * 1000;
+    const intervalId = window.setInterval(() => {
+      if (!hasLocalEdits || conflicts.length > 0 || syncStatus === 'syncing') {
+        return;
+      }
+
+      handleSave(workbookData, 'auto');
+    }, intervalMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    id,
+    user?.uid,
+    autoSaveIntervalMinutes,
+    hasLocalEdits,
+    conflicts.length,
+    syncStatus,
+    workbookData,
+    handleSave,
+  ]);
 
   const handleCommitSelect = async (commit: Commit) => {
     setIsCommitDetailsLoading(true);

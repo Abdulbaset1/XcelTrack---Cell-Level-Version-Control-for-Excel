@@ -14,6 +14,16 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS user_settings (
+    user_id VARCHAR(255) PRIMARY KEY REFERENCES users(firebase_uid) ON DELETE CASCADE,
+    auto_save_interval INT DEFAULT 10,
+    version_history_limit INT DEFAULT 50,
+    email_alerts BOOLEAN DEFAULT TRUE,
+    collaboration_invites BOOLEAN DEFAULT TRUE,
+    public_profile BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS workbooks (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

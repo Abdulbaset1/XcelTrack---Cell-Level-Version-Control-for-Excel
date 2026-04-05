@@ -3,21 +3,89 @@ import { Link } from 'react-router-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
+import { getUserSettings, updateUserSettings } from '../services/api';
 
 const Settings: React.FC = () => {
   const { settings, updateSettings } = useSettings();
+  const { user } = useAuth();
   const { toggleTheme, isDark } = useTheme();
   const { showToast } = useToast();
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
 
   const handleChange = (key: any, value: any) => {
     updateSettings({ [key]: value });
   };
 
-  const handleSave = () => {
-    setShowSuccess(true);
-    showToast("Settings saved successfully", "success");
-    setTimeout(() => setShowSuccess(false), 3000);
+  React.useEffect(() => {
+    const loadSettings = async () => {
+      if (!user?.uid) {
+        setIsLoadingSettings(false);
+        return;
+      }
+
+      setIsLoadingSettings(true);
+      try {
+        const response = await getUserSettings(user.uid, user.uid);
+        const dbSettings = response.settings;
+        updateSettings({
+          autoSaveInterval: String(dbSettings.auto_save_interval),
+          versionHistoryLimit: Number(dbSettings.version_history_limit),
+          emailAlerts: Boolean(dbSettings.email_alerts),
+          collaborationInvites: Boolean(dbSettings.collaboration_invites),
+          publicProfile: Boolean(dbSettings.public_profile),
+        });
+      } catch (error: any) {
+        showToast(error?.message || 'Failed to load settings', 'error');
+      } finally {
+        setIsLoadingSettings(false);
+      }
+    };
+
+    loadSettings();
+  }, [user?.uid, showToast, updateSettings]);
+
+  const handleSave = async () => {
+    if (!user?.uid) {
+      showToast('Please login to save settings', 'warning');
+      return;
+    }
+
+    const autoSaveInterval = Number(settings.autoSaveInterval);
+    if (!Number.isFinite(autoSaveInterval) || autoSaveInterval < 1 || autoSaveInterval > 120) {
+      showToast('Auto-save interval must be between 1 and 120 minutes', 'warning');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await updateUserSettings(user.uid, {
+        user_id: user.uid,
+        auto_save_interval: autoSaveInterval,
+        version_history_limit: Number(settings.versionHistoryLimit),
+        email_alerts: Boolean(settings.emailAlerts),
+        collaboration_invites: Boolean(settings.collaborationInvites),
+        public_profile: Boolean(settings.publicProfile),
+      });
+
+      updateSettings({
+        autoSaveInterval: String(response.settings.auto_save_interval),
+        versionHistoryLimit: Number(response.settings.version_history_limit),
+        emailAlerts: Boolean(response.settings.email_alerts),
+        collaborationInvites: Boolean(response.settings.collaboration_invites),
+        publicProfile: Boolean(response.settings.public_profile),
+      });
+
+      setShowSuccess(true);
+      showToast("Settings saved successfully", "success");
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (error: any) {
+      showToast(error?.message || 'Failed to save settings', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
 
@@ -56,6 +124,10 @@ const Settings: React.FC = () => {
           </div>
 
           <div className="space-y-10">
+            {isLoadingSettings && (
+              <div className="text-sm text-[#535F80]">Loading saved settings...</div>
+            )}
+
             {/* Appearance Settings */}
             <section>
               <h2 className="text-xl font-bold text-[#051747] mb-6 flex items-center border-b-2 border-gray-300 pb-3">
@@ -101,18 +173,6 @@ const Settings: React.FC = () => {
                     className="w-full bg-blue-50 border-2 border-blue-300 rounded-lg px-4 py-2 text-[#051747] focus:border-blue-500 focus:outline-none"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-[#535F80] mb-2">Difference Highlight Color</label>
-                  <div className="flex items-center space-x-4">
-                    <input
-                      type="color"
-                      value={settings.diffHighlightColor}
-                      onChange={(e) => handleChange('diffHighlightColor', e.target.value)}
-                      className="w-12 h-12 rounded-lg cursor-pointer"
-                    />
-                    <span className="text-sm font-mono text-[#051747]">{settings.diffHighlightColor}</span>
-                  </div>
-                </div>
               </div>
             </section>
 
@@ -141,21 +201,6 @@ const Settings: React.FC = () => {
                   </label>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-[#051747]">Weekly Digest</p>
-                    <p className="text-sm text-[#535F80]">Get a summary of your activity every week</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={settings.weeklyDigest}
-                      onChange={(e) => handleChange('weeklyDigest', e.target.checked)}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
               </div>
             </section>
 
@@ -168,21 +213,6 @@ const Settings: React.FC = () => {
                 Security & Privacy
               </h2>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-[#051747]">Two-Factor Authentication</p>
-                    <p className="text-sm text-[#535F80]">Add an extra layer of security to your account</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={settings.twoFactorAuth}
-                      onChange={(e) => handleChange('twoFactorAuth', e.target.checked)}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-[#051747]">Public Profile</p>
@@ -205,9 +235,10 @@ const Settings: React.FC = () => {
             <div className="flex justify-end pt-4 border-t-2 border-gray-300">
               <button
                 onClick={handleSave}
+                disabled={isSaving || isLoadingSettings}
                 className="btn-watch-demo shadow-lg px-8 py-3"
               >
-                Save Changes
+                {isSaving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

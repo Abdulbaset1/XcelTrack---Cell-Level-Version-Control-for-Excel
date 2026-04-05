@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { FaTrash, FaUserShield, FaUser } from 'react-icons/fa6';
 import { FaShieldAlt } from 'react-icons/fa';
+import { getAdminUsers, updateAdminUser, deleteAdminUser } from '../services/api';
 
 interface User {
     id: string;
@@ -14,6 +16,7 @@ interface User {
 
 const UsersPage: React.FC = () => {
     const { user: currentUser } = useAuth();
+    const { showToast } = useToast();
     const [users, setUsers] = useState<User[]>([]);
     const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
@@ -23,11 +26,15 @@ const UsersPage: React.FC = () => {
     const [actionLoading, setActionLoading] = useState(false);
 
     // Fetch users from backend
-    const fetchUsers = async () => {
+    const fetchUsers = useCallback(async () => {
+        if (!currentUser?.uid) {
+            setLoading(false);
+            return;
+        }
+
         try {
-            const response = await fetch('http://localhost:5000/api/users');
-            if (!response.ok) throw new Error('Failed to fetch users');
-            const data = await response.json();
+            const response = await getAdminUsers(currentUser.uid);
+            const data = response.users || [];
 
             // Map backend data to frontend interface
             const mappedUsers: User[] = data.map((u: any) => ({
@@ -47,11 +54,11 @@ const UsersPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [currentUser?.uid]);
 
     useEffect(() => {
         fetchUsers();
-    }, []);
+    }, [fetchUsers]);
 
     // Filter users based on search and exclude current user
     useEffect(() => {
@@ -69,28 +76,26 @@ const UsersPage: React.FC = () => {
     }, [searchTerm, users, currentUser]);
 
     const deleteUser = async (uid: string) => {
+        if (!currentUser?.uid) return;
         if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
 
         setActionLoading(true);
         try {
-            const response = await fetch(`http://localhost:5000/api/admin/users/${uid}`, {
-                method: 'DELETE',
-            });
-
-            if (!response.ok) throw new Error('Failed to delete user');
+            await deleteAdminUser(currentUser.uid, uid);
 
             setUsers(prev => prev.filter(u => u.id !== uid));
             if (selectedUser?.id === uid) setSelectedUser(null);
-            alert('User deleted successfully');
+            showToast('User deleted successfully', 'success');
         } catch (err) {
             console.error('Error deleting user:', err);
-            alert('Failed to delete user. Check console for details.');
+            showToast('Failed to delete user. Check console for details.', 'error');
         } finally {
             setActionLoading(false);
         }
     };
 
     const changeRole = async (uid: string, newRole: 'admin' | 'user') => {
+        if (!currentUser?.uid) return;
         setActionLoading(true);
         try {
             // We need to send name and email as well because the PUT endpoint expects them
@@ -98,25 +103,20 @@ const UsersPage: React.FC = () => {
             const userToUpdate = users.find(u => u.id === uid);
             if (!userToUpdate) return;
 
-            const response = await fetch(`http://localhost:5000/api/admin/users/${uid}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: userToUpdate.email,
-                    name: userToUpdate.name,
-                    role: newRole
-                })
+            await updateAdminUser(currentUser.uid, uid, {
+                email: userToUpdate.email,
+                name: userToUpdate.name,
+                role: newRole,
             });
-
-            if (!response.ok) throw new Error('Failed to update role');
 
             setUsers(prev => prev.map(u => u.id === uid ? { ...u, role: newRole } : u));
             if (selectedUser?.id === uid) {
                 setSelectedUser(prev => prev ? { ...prev, role: newRole } : null);
             }
+            showToast('Role updated successfully', 'success');
         } catch (err) {
             console.error('Error updating role:', err);
-            alert('Failed to update role.');
+            showToast('Failed to update role.', 'error');
         } finally {
             setActionLoading(false);
         }
