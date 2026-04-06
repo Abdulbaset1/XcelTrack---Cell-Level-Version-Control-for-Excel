@@ -3086,12 +3086,48 @@ const rollbackWorkbookToCommit = async ({ workbookId, commitId, userId }) => {
             [commitId]
         );
 
+        const snapshotCellIds = cellVersions.rows.map((version) => Number(version.cell_id)).filter(Number.isFinite);
+
+        // Clear cells that were introduced after the target commit so rollback restores full snapshot state
+        if (snapshotCellIds.length > 0) {
+            await client.query(
+                `UPDATE cells c
+                 SET value = NULL,
+                     formula = NULL,
+                     style = '{}'::jsonb,
+                     cell_version = COALESCE(c.cell_version, 1) + 1,
+                     last_edited_by = $2
+                 FROM worksheets ws
+                 WHERE c.worksheet_id = ws.id
+                   AND ws.workbook_id = $1
+                   AND NOT (c.id = ANY($3::int[]))`,
+                [workbookId, userId, snapshotCellIds]
+            );
+        } else {
+            await client.query(
+                `UPDATE cells c
+                 SET value = NULL,
+                     formula = NULL,
+                     style = '{}'::jsonb,
+                     cell_version = COALESCE(c.cell_version, 1) + 1,
+                     last_edited_by = $2
+                 FROM worksheets ws
+                 WHERE c.worksheet_id = ws.id
+                   AND ws.workbook_id = $1`,
+                [workbookId, userId]
+            );
+        }
+
         for (const version of cellVersions.rows) {
             await client.query(
                 `UPDATE cells 
-                 SET value = $1, formula = $2, style = $3
-                 WHERE id = $4`,
-                [version.value, version.formula, version.style, version.cell_id]
+                 SET value = $1,
+                     formula = $2,
+                     style = $3,
+                     cell_version = COALESCE(cell_version, 1) + 1,
+                     last_edited_by = $4
+                 WHERE id = $5`,
+                [version.value, version.formula, version.style, userId, version.cell_id]
             );
         }
 
@@ -3112,6 +3148,8 @@ const rollbackWorkbookToCommit = async ({ workbookId, commitId, userId }) => {
                 [newCommitResult.rows[0].id, version.cell_id, version.value, version.formula, version.style]
             );
         }
+
+        await client.query('UPDATE workbooks SET updated_at = NOW() WHERE id = $1', [workbookId]);
 
         await client.query('COMMIT');
 

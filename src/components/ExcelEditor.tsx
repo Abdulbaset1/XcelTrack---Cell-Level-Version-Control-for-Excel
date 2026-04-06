@@ -288,11 +288,33 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
                 range.setValue(next);
             };
 
-            const clearActiveCell = () => {
+            const editActiveCellText = (editMode: 'clear' | 'backspace' | 'delete') => {
                 const wb = fUniverRef.current?.getActiveWorkbook();
                 const sh = wb?.getActiveSheet();
                 const range = sh?.getSelection()?.getActiveRange();
-                range?.setValue('');
+
+                if (!range) return;
+
+                const current = range.getValue() as any;
+                let currentText = '';
+                if (current != null) {
+                    if (typeof current === 'object' && current.v !== undefined) {
+                        currentText = String(current.v ?? '');
+                    } else {
+                        currentText = String(current);
+                    }
+                }
+
+                let nextText = currentText;
+                if (editMode === 'clear') {
+                    nextText = '';
+                } else if (editMode === 'backspace') {
+                    nextText = currentText.length > 0 ? currentText.slice(0, -1) : '';
+                } else if (editMode === 'delete') {
+                    nextText = currentText.length > 0 ? currentText.slice(1) : '';
+                }
+
+                range.setValue(nextText);
             };
 
             // Double-click on the canvas – keep default Univer behaviour, but
@@ -320,9 +342,14 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
                     );
                 if (isTypingInInput) return;
 
-                // Handle backspace/delete to clear the active cell
-                if (e.key === 'Backspace' || e.key === 'Delete') {
-                    clearActiveCell();
+                // Handle backspace/delete one character at a time
+                if (e.key === 'Backspace') {
+                    editActiveCellText('backspace');
+                    return;
+                }
+
+                if (e.key === 'Delete') {
+                    editActiveCellText('delete');
                     return;
                 }
 
