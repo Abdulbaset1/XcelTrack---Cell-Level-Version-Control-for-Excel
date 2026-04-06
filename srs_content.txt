@@ -365,14 +365,10 @@ recent changes merged.
 FR2.5 The system shall maintain file metadata (owner, creation date, 
 version, size). 
 3.2.3 Cell-Level Version Control: 
-FR3.1 The system shall record every change made to individual cells 
-as separate versions. 
 FR3.2 Each version shall be tagged with timestamp, user ID, and 
 commit message. 
 FR3.3 The system shall allow users to view complete version history 
 of workbook or single cell. 
-FR3.4 The system shall allow users to revert to previous version of 
-entire workbook or individual cell. 
 FR3.5 The system shall support commit-based version history similar 
 to Git. 
  
@@ -381,10 +377,6 @@ FR4.1 The system shall generate human-readable summaries of
 changes instead of raw code differences. 
 FR4.2 The system shall display semantic diffs (e.g., "Formula in B2 
 changed from SUM to AVERAGE"). 
-FR4.3 The system shall maintain tamper-proof audit log of all edits 
-for compliance. 
-FR4.4 The system shall allow users to filter and search audit trail by 
-user, date, cell reference, or commit message. 
  
 3.2.5 AI-Powered Assistance: 
 FR5.1 The system shall automatically detect common Excel errors. 
@@ -392,10 +384,6 @@ FR5.2 The system shall use AI to analyze data patterns and highlight
 potential outliers. 
 9 
 XcelTrack 
-FR5.3 The system shall use AI to suggest conflict resolution options 
-during merges. 
-FR5.4 The system may suggest alternative, more efficient functions 
-for simple formulas. 
 3.2.6 Real-time Collaboration: 
 FR6.1 The system shall allow multiple users to edit same spreadsheet 
 simultaneously through web interface. 
@@ -411,17 +399,7 @@ across all active sessions.
 3.2.7 Hybrid Editing Support: 
 FR7.1 The system shall allow users to download Excel files for offline 
 editing. 
-FR7.2 When offline file is re-uploaded, system shall automatically 
-parse all changes. 
-FR7.3 The system shall integrate offline changes into main version 
-history. 
-FR7.4 The system shall detect conflicts between offline and online 
-edits and notify users. 
-FR7.5 The web client shall maintain offline edits in browser's local 
-storage until re-upload. 
 3.2.8 Notifications System: 
-FR8.1 The system shall prompt users to add commit messages for 
-major edits. 
 10 
 XcelTrack 
 FR8.2 The system shall send notifications (in-app or email) for 
@@ -459,18 +437,10 @@ FR11.3 The system shall allow users to reorder worksheets within a
 workbook by changing their position index. 
 FR11.4 The system shall allow users to delete worksheets from a 
 workbook, with appropriate confirmation prompts. 
-FR11.5 The system shall track worksheet-level changes (creation, 
-renaming, deletion, reordering) in the version history. 
-FR11.6 The system shall maintain worksheet metadata including 
-name, position index, creation date, and last modification date. 
 FR11.7 The system shall validate worksheet names to prevent 
 duplicates within the same workbook. 
 FR11.8 The system shall prevent deletion of the last remaining 
 worksheet in a workbook. 
-FR11.9 The system shall support worksheet operations in both online 
-and hybrid editing modes. 
-FR11.10 The system shall synchronize worksheet changes across all 
-active collaboration sessions in real-time. 
  
 3.3 Non-Functional Requirements: 
 NFR1. Performance: 
@@ -514,6 +484,59 @@ NFR7. Maintainability:
  The system shall use Git for version control of source code. 
  The system shall support Dockerized environments for easy 
 deployment. 
+
+3.4 Test Case Table:
+The following test cases are aligned with implemented XcelTrack
+modules and are suitable for SRS verification.
+
+| Component | Functionality | Input Conditions | Expected Output | Pass/Fail Criteria |
+|---|---|---|---|---|
+| Login / AuthContext | Renders login form | Open login page | "Login", email, password, and submit controls are visible | Pass: All required fields/buttons render; Fail: Any required control missing |
+| Login / AuthContext | Valid login | Enter valid email/password and submit | User is authenticated and redirected to dashboard | Pass: Session created and dashboard loads; Fail: No redirect or auth not stored |
+| Login / AuthContext | Invalid login handling | Enter invalid credentials and submit | Generic invalid-credentials message is displayed | Pass: Error shown and no session created; Fail: User logs in or no feedback |
+| Signup / AuthContext | New user registration | Enter unique email + valid password and submit | New account is created successfully | Pass: Account exists and success flow completes; Fail: Account not created |
+| Dashboard page | Dashboard render | Login as valid user | Workbook cards/summary/quick actions are displayed | Pass: Core dashboard widgets visible; Fail: Broken or empty dashboard |
+| Dashboard page | Empty-state behavior | User has zero workbooks | Empty-state prompt (upload/create workbook) is displayed | Pass: Helpful empty state appears; Fail: blank/broken screen |
+| File Upload (Workbook) | Upload valid Excel file | Select .xlsx/.xls and submit upload | Workbook is parsed and appears in workbook list | Pass: Upload success + new workbook visible; Fail: Upload accepted but not listed |
+| File Upload (Workbook) | Reject invalid file | Select unsupported file type | Validation error is shown and upload is blocked | Pass: Invalid file rejected with message; Fail: Unsupported file processed |
+| Editor / ExcelEditor | Load workbook data | Open editor for existing workbook | Worksheet grid and workbook content render correctly | Pass: Cell data appears and editor interactive; Fail: load error/blank grid |
+| Editor / Save/Commit | Manual save creates commit | Edit cell(s) then click save | Commit is created and success toast is shown | Pass: New commit appears in history; Fail: No commit created |
+| VersionHistoryTimeline | Display commit history | Open History tab in editor | Chronological commit list with message/timestamp is visible | Pass: History entries load correctly; Fail: missing/incorrect entries |
+| Diff / Commit details | View semantic diff | Select commit in history | Human-readable cell-change details are displayed | Pass: Diff content maps to changed cells; Fail: empty or incorrect diff |
+| RollbackModal | Revert workbook to prior commit | Select old commit and confirm rollback | Workbook state resets to selected commit version | Pass: Cells reflect selected commit snapshot; Fail: state unchanged/wrong |
+| WebSocket collaboration | Real-time cell broadcast | User A edits cell while User B is viewing same workbook | User B sees near-real-time update in same cell | Pass: Update appears on collaborator side; Fail: no sync delay/failure |
+| ConflictResolutionViewer | Conflict detection and resolution | Two users edit same cell concurrently | Conflict is flagged and resolution UI is shown | Pass: Conflict appears and can be resolved; Fail: silent overwrite |
+| ConflictResolutionViewer | Resolve conflict | Choose resolution and submit | Resolved value is applied and conflict is cleared | Pass: conflict removed and value synced; Fail: conflict persists |
+| WorksheetTabs | Create worksheet | Click create sheet action | New sheet is added and becomes selectable | Pass: New sheet exists in tabs and backend; Fail: no new sheet |
+| WorksheetTabs | Rename worksheet | Rename existing sheet with unique name | Sheet name updates in UI and persisted state | Pass: Name updated consistently; Fail: stale/partial rename |
+| WorksheetTabs | Prevent duplicate worksheet names | Rename/create using existing name | Validation error prevents duplicate | Pass: Duplicate blocked with error; Fail: duplicate sheet created |
+| WorksheetTabs | Delete worksheet constraints | Attempt to delete last remaining worksheet | Deletion is blocked with warning | Pass: Last sheet protected; Fail: workbook left with zero sheets |
+| Hybrid mode (Download/Re-upload) | Download workbook for offline editing | Click download on workbook | Excel file is downloaded successfully | Pass: File downloads and opens; Fail: failed/invalid file |
+| Hybrid mode (Re-upload merge) | Re-upload modified file | Upload offline-edited workbook | Changes are parsed and merged into workbook | Pass: merged updates visible with audit/commit trail; Fail: changes lost |
+| AI assistance | Explain formula | Select formula cell and request explanation | Plain-language explanation is returned | Pass: explanation shown for selected formula; Fail: no result/error |
+| AI assistance | Detect workbook errors | Trigger AI error scan for workbook | Detected formula/value issues are listed | Pass: findings summary appears; Fail: scan fails silently |
+| AI assistance | Analyze workbook data | Trigger AI analyze-data action | Statistical summary/outlier hints are displayed | Pass: analysis output appears; Fail: missing response |
+| Notifications | Show in-app notifications | Trigger event (e.g., conflict/invite/system alert) | Notification appears in dropdown panel | Pass: notification count/list updates; Fail: event not surfaced |
+| Admin Dashboard | Access control for admin routes | Non-admin navigates to admin page | Access denied/redirected from admin-only route | Pass: unauthorized blocked; Fail: non-admin gains access |
+| Admin Dashboard | Audit log retrieval | Admin opens audit logs page | Logs load with expected details and filters | Pass: logs visible and filterable; Fail: no logs/filter failure |
+| API data fetching | Unauthorized API request handling | Missing/invalid requester context | Backend returns authorization error and UI handles gracefully | Pass: 401/403 with stable UI message; Fail: crash/data leak |
+| Navigation | Protected route redirect | Open editor route without login | User is redirected to login page | Pass: redirect occurs and no protected data shown; Fail: protected page visible |
+| Error handling | Backend failure message | Simulate server 500 on data fetch | User sees retry-friendly error message/toast | Pass: clear error + app remains usable; Fail: blank page/hang |
+| Error handling | Network interruption handling | Disconnect network during API call | User sees network error and can retry | Pass: app remains responsive with feedback; Fail: freeze/crash |
+| Security / Session | Expired session token handling | Use expired/invalid auth token and call protected API | Request is rejected and user is prompted to re-authenticate | Pass: 401 returned, session cleared, redirect/login prompt shown; Fail: stale token still accesses data |
+| Security / Password policy | Weak password rejection at signup | Enter password below required strength rules | Validation message is shown and signup is blocked | Pass: weak password rejected with clear guidance; Fail: weak password accepted |
+| Admin Dashboard / RBAC | Admin-only action protection | Non-admin attempts user-management action (create role/update role/delete user) | Action is denied with authorization error | Pass: backend blocks action and UI shows access denied; Fail: unauthorized action succeeds |
+| File Upload (Workbook) | Boundary file size handling | Upload workbook near/over max allowed size | Valid-size file accepted; oversized file rejected with message | Pass: boundary behavior matches configured limit; Fail: wrong accept/reject behavior |
+| File Upload (Workbook) | Corrupted workbook handling | Upload damaged/corrupted .xlsx file | Parser fails safely with user-facing error | Pass: graceful error and no partial data stored; Fail: crash or partial/corrupt save |
+| Editor / Save/Commit | Empty/no-change commit behavior | Click save without any workbook changes | No redundant commit created; user gets informative feedback | Pass: history unchanged and clear message shown; Fail: empty commit added |
+| WebSocket collaboration | Reconnect synchronization | Disconnect collaborator briefly, then reconnect | Missed updates are fetched and sheet state converges | Pass: reconnected user sees latest consistent state; Fail: stale or divergent data remains |
+| ConflictResolutionViewer | Multi-conflict batch handling | Concurrent edits create conflicts in multiple cells | All conflicts are listed and resolvable without data loss | Pass: each conflict resolved and final sheet consistent; Fail: hidden/unresolved conflicts remain |
+| Reliability / Recovery | Retry after transient server error | Trigger temporary API failure then retry action | Operation succeeds on retry without duplicate side effects | Pass: retry works and no duplicate commits/records; Fail: repeated failures or duplicate writes |
+| Performance / Upload | Upload response-time target | Upload typical workbook under normal load | Upload + parse completes within target threshold | Pass: operation stays within NFR target; Fail: exceeds threshold significantly |
+| Performance / Collaboration | Concurrent editor scalability | Simulate at least 10 active collaborators editing | Real-time sync remains responsive and stable | Pass: acceptable latency/no disconnect storm; Fail: lag, dropped updates, or instability |
+| Usability / Accessibility | Keyboard-only navigation | Navigate login, dashboard, and editor controls using keyboard only | Focus order is logical; key actions are accessible without mouse | Pass: full flow operable by keyboard; Fail: focus traps/inaccessible controls |
+| Usability / Accessibility | Screen-reader label clarity | Inspect forms/buttons/alerts with screen reader | Controls announce meaningful labels and state changes | Pass: labels/roles/alerts are announced correctly; Fail: missing/ambiguous announcements |
+
  
  
 13 

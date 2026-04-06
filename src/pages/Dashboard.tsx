@@ -6,12 +6,14 @@ import {
   getWorkbooks,
   getProfileSummary,
   uploadWorkbook,
+  createEmptyWorkbook,
   downloadWorkbook,
   getUserCommits,
   getRegisteredUsers,
   addWorkbookCollaborator,
   getWorkbookCollaborators,
   removeWorkbookCollaborator,
+  renameWorkbook,
   deleteWorkbook,
   RegisteredUser,
   WorkbookCollaborator,
@@ -175,6 +177,26 @@ const Dashboard: React.FC = () => {
     setIsUploadModalOpen(false);
   };
 
+  const handleCreateWorkbook = async () => {
+    if (!user?.uid) {
+      showToast('You must be logged in to create a spreadsheet', 'warning');
+      return;
+    }
+
+    try {
+      const response = await createEmptyWorkbook(user.uid);
+      if (response?.workbook?.id) {
+        showToast('New spreadsheet created', 'success');
+        navigate(`/editor/${response.workbook.id}`);
+      } else {
+        throw new Error('Workbook ID missing from response');
+      }
+    } catch (createError: any) {
+      console.error('Create workbook failed:', createError);
+      showToast(createError.message || 'Failed to create spreadsheet', 'error');
+    }
+  };
+
   const handleDownload = async (e: React.MouseEvent, fileId: string, fileName: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -215,6 +237,43 @@ const Dashboard: React.FC = () => {
       showToast(deleteError.message || 'Failed to delete workbook', 'error');
     } finally {
       setIsDeletingFileId(null);
+    }
+  };
+
+  const handleRenameFile = async (e: React.MouseEvent, file: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!user?.uid) return;
+
+    if (!file.is_owner) {
+      showToast('Only the file owner can rename this workbook', 'warning');
+      return;
+    }
+
+    const currentName = String(file.name || '');
+    const suggestedName = currentName.replace(/\.xlsx$/i, '');
+    const enteredName = window.prompt('Enter new file name', suggestedName);
+
+    if (enteredName === null) return;
+
+    const cleaned = enteredName.trim();
+    if (!cleaned) {
+      showToast('File name cannot be empty', 'warning');
+      return;
+    }
+
+    const finalName = /\.xlsx$/i.test(cleaned) ? cleaned : `${cleaned}.xlsx`;
+
+    try {
+      await renameWorkbook(file.id, user.uid, finalName);
+      showToast('Workbook renamed successfully', 'success');
+      setSelectedFileForMenu(null);
+      await fetchFiles();
+      await fetchRecentActivity();
+    } catch (renameError: any) {
+      console.error('Rename workbook failed:', renameError);
+      showToast(renameError.message || 'Failed to rename workbook', 'error');
     }
   };
 
@@ -518,7 +577,7 @@ const Dashboard: React.FC = () => {
                       </p>
                       <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                         <button
-                          onClick={() => navigate('/editor')}
+                          onClick={handleCreateWorkbook}
                           className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all text-sm"
                         >
                           New Spreadsheet
@@ -548,7 +607,7 @@ const Dashboard: React.FC = () => {
                 <h3 className="text-lg font-semibold text-[#051747] mb-4">Quick Actions</h3>
                 <div className="space-y-3">
                   <button
-                    onClick={() => navigate('/editor')}
+                    onClick={handleCreateWorkbook}
                     className="btn-watch-demo w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -697,6 +756,13 @@ const Dashboard: React.FC = () => {
             <p className="text-sm text-[#535F80] mb-4">{selectedFileForMenu.name}</p>
 
             <div className="space-y-2">
+              <button
+                onClick={(e) => handleRenameFile(e, selectedFileForMenu)}
+                disabled={!selectedFileForMenu.is_owner}
+                className="w-full text-left px-4 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-[#051747] disabled:text-gray-400 disabled:hover:bg-gray-100"
+              >
+                Rename file
+              </button>
               <button
                 onClick={(e) => handleOpenCollaboratorModal(e, selectedFileForMenu)}
                 className="w-full text-left px-4 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-[#051747]"

@@ -18,6 +18,21 @@ export const uploadWorkbook = async (file: File, ownerId: string) => {
     return response.json();
 };
 
+export const createEmptyWorkbook = async (ownerId: string, name?: string) => {
+    const response = await fetch(`${API_URL}/workbooks/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ owner_id: ownerId, name }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create workbook');
+    }
+
+    return response.json();
+};
+
 export const getWorkbooks = async (ownerId: string) => {
     const response = await fetch(`${API_URL}/workbooks?owner_id=${ownerId}&requester_id=${ownerId}`);
     if (!response.ok) {
@@ -228,6 +243,25 @@ export const deleteWorkbook = async (workbookId: string | number, requesterId: s
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to delete workbook');
+    }
+
+    return response.json();
+};
+
+export const renameWorkbook = async (
+    workbookId: string | number,
+    requesterId: string,
+    name: string
+) => {
+    const response = await fetch(`${API_URL}/workbooks/${workbookId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_id: requesterId, name }),
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to rename workbook');
     }
 
     return response.json();

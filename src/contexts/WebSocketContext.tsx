@@ -61,6 +61,13 @@ interface TypingEvent {
     user: CollaborativeUser | null;
 }
 
+export interface WorkbookRenamedEvent {
+    workbookId: number;
+    name: string;
+    renamedBy?: string;
+    timestamp?: string;
+}
+
 interface WebSocketContextType {
     socket: Socket | null;
     isConnected: boolean;
@@ -79,6 +86,7 @@ interface WebSocketContextType {
     onConflictResolved: (callback: (data: any) => void) => void;
     onCellEditRejected: (callback: (data: CellEditRejection) => void) => void;
     onCellEditAccepted: (callback: (data: CellEditAcceptance) => void) => void;
+    onWorkbookRenamed: (callback: (data: WorkbookRenamedEvent) => void) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);
@@ -111,6 +119,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     const conflictResolvedCallbackRef = useRef<((data: any) => void) | null>(null);
     const cellEditRejectedCallbackRef = useRef<((data: CellEditRejection) => void) | null>(null);
     const cellEditAcceptedCallbackRef = useRef<((data: CellEditAcceptance) => void) | null>(null);
+    const workbookRenamedCallbackRef = useRef<((data: WorkbookRenamedEvent) => void) | null>(null);
 
     useEffect(() => {
         const newSocket = io(serverUrl);
@@ -210,6 +219,12 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
             }
         });
 
+        newSocket.on('workbook-renamed', (data: WorkbookRenamedEvent) => {
+            if (workbookRenamedCallbackRef.current) {
+                workbookRenamedCallbackRef.current(data);
+            }
+        });
+
         setSocket(newSocket);
 
         return () => {
@@ -267,6 +282,10 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
         cellEditAcceptedCallbackRef.current = callback;
     }, []);
 
+    const onWorkbookRenamed = useCallback((callback: (data: WorkbookRenamedEvent) => void) => {
+        workbookRenamedCallbackRef.current = callback;
+    }, []);
+
     return (
         <WebSocketContext.Provider
             value={{
@@ -287,6 +306,7 @@ export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
                 onConflictResolved,
                 onCellEditRejected,
                 onCellEditAccepted,
+                onWorkbookRenamed,
             }}
         >
             {children}

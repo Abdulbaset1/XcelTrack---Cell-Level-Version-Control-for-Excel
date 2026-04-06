@@ -670,6 +670,13 @@ const requireWorkbookOwnerOrAdmin = (req, res, next) => {
     next();
 };
 
+const requireWorkbookOwner = (req, res, next) => {
+    if (!req.workbookAccess?.isOwner) {
+        return res.status(403).json({ error: 'Only the workbook owner can perform this action', code: 'OWNER_ONLY_REQUIRED' });
+    }
+    next();
+};
+
 const loadCommitAccess = async (req, res, next) => {
     try {
         const commitId = parseInt(req.params.id || req.params.commitId, 10);
@@ -1630,6 +1637,76 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // --- Workbook & Excel Processing Endpoints ---
 
+// Create Empty Workbook
+app.post('/api/workbooks/create', requireRequester, requireNonViewer, async (req, res) => {
+    const { owner_id, name } = req.body;
+
+    if (!owner_id) {
+        return res.status(400).json({ error: 'owner_id is required' });
+    }
+
+    if (req.requesterRole !== 'admin' && owner_id !== req.requesterId) {
+        return res.status(403).json({ error: 'Requester must match owner_id', code: 'OWNER_MISMATCH' });
+    }
+
+    const trimmedName = String(name || '').trim();
+    const workbookName = trimmedName.length > 0
+        ? trimmedName
+        : `Untitled-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`;
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const wbResult = await client.query(
+            'INSERT INTO workbooks (name, owner_id, storage_bytes) VALUES ($1, $2, $3) RETURNING *',
+            [workbookName, owner_id, 0]
+        );
+        const newWorkbook = wbResult.rows[0];
+
+        const hash = crypto.createHash('sha256')
+            .update(`${newWorkbook.id}-${owner_id}-${Date.now()}-initial-empty`)
+            .digest('hex');
+
+        await client.query(
+            'INSERT INTO commits (workbook_id, user_id, message, hash) VALUES ($1, $2, $3, $4)',
+            [newWorkbook.id, owner_id, 'Initial Workbook Created', hash]
+        );
+
+        await client.query(
+            'INSERT INTO worksheets (workbook_id, name, sheet_order) VALUES ($1, $2, $3)',
+            [newWorkbook.id, 'Sheet1', 0]
+        );
+
+        await client.query('COMMIT');
+
+        await cache.del(cache.userWorkbooksKey(owner_id));
+
+        await createNotifications({
+            userIds: [owner_id],
+            type: 'success',
+            title: 'Workbook created',
+            message: `${workbookName} was created successfully.`,
+            metadata: { workbookId: newWorkbook.id },
+        });
+
+        return res.status(201).json({
+            message: 'Workbook created successfully',
+            workbook: newWorkbook,
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        logger.error('Error creating empty workbook', {
+            error: error.message,
+            owner_id,
+            workbookName,
+        });
+        return res.status(500).json({ error: 'Failed to create workbook' });
+    } finally {
+        client.release();
+    }
+});
+
 // Upload Workbook
 app.post('/api/workbooks/upload', uploadLimiter, upload.single('file'), requireRequester, requireNonViewer, async (req, res) => {
     const { owner_id, owner_name } = req.body;
@@ -2080,6 +2157,68 @@ app.delete('/api/workbooks/:id/collaborators/:collaboratorId', requireRequester,
 });
 
 // Delete Workbook (Owner only)
+app.put('/api/workbooks/:id', requireRequester, loadWorkbookAccess, requireWorkbookOwner, async (req, res) => {
+    const { id } = req.params;
+    const { requester_id, name } = req.body;
+
+    if (!requester_id) {
+        return res.status(400).json({ error: 'requester_id is required' });
+    }
+
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName) {
+        return res.status(400).json({ error: 'name is required' });
+    }
+
+    if (trimmedName.length > 255) {
+        return res.status(400).json({ error: 'name must be 255 characters or fewer' });
+    }
+
+    try {
+        const updateResult = await pool.query(
+            `UPDATE workbooks
+             SET name = $1, updated_at = NOW()
+             WHERE id = $2
+             RETURNING id, name, owner_id, updated_at`,
+            [trimmedName, id]
+        );
+
+        if (updateResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Workbook not found' });
+        }
+
+        const workbook = updateResult.rows[0];
+        const collaboratorRows = await pool.query(
+            'SELECT user_id FROM workbook_collaborators WHERE workbook_id = $1',
+            [id]
+        );
+
+        await cache.del(cache.userWorkbooksKey(workbook.owner_id));
+        for (const row of collaboratorRows.rows) {
+            await cache.del(cache.userWorkbooksKey(row.user_id));
+        }
+
+        io.to(`workbook-${id}`).emit('workbook-renamed', {
+            workbookId: Number(id),
+            name: workbook.name,
+            renamedBy: requester_id,
+            timestamp: new Date().toISOString(),
+        });
+
+        return res.json({
+            message: 'Workbook renamed successfully',
+            workbook,
+        });
+    } catch (error) {
+        logger.error('Error renaming workbook', {
+            error: error.message,
+            workbookId: id,
+            requesterId: requester_id,
+        });
+        return res.status(500).json({ error: 'Failed to rename workbook' });
+    }
+});
+
 app.delete('/api/workbooks/:id', requireRequester, loadWorkbookAccess, requireWorkbookOwnerOrAdmin, async (req, res) => {
     const { id } = req.params;
     const requesterId = req.query.requester_id || req.body?.requester_id;

@@ -1,6 +1,8 @@
 class AIService {
     constructor() {
-        this.provider = (process.env.AI_PROVIDER || 'heuristic').toLowerCase();
+        this.provider = (process.env.AI_PROVIDER || 'ollama').toLowerCase();
+        this.ollamaBaseUrl = (process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+        this.ollamaModel = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct';
         this.openaiApiKey = process.env.OPENAI_API_KEY;
         this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     }
@@ -81,6 +83,61 @@ class AIService {
         };
     }
 
+    async _ollamaText(prompt, systemMessage) {
+        if (this.provider !== 'ollama') {
+            return null;
+        }
+
+        const response = await fetch(`${this.ollamaBaseUrl}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.ollamaModel,
+                messages: [
+                    { role: 'system', content: systemMessage },
+                    { role: 'user', content: prompt },
+                ],
+                stream: false,
+                options: {
+                    temperature: 0.2,
+                },
+            }),
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(`Ollama request failed: ${response.status} ${text}`);
+        }
+
+        const data = await response.json();
+        const content = data?.message?.content || data?.response || '';
+
+        return {
+            text: content,
+            usage: {
+                prompt_tokens: data?.prompt_eval_count || 0,
+                completion_tokens: data?.eval_count || 0,
+                total_tokens: (data?.prompt_eval_count || 0) + (data?.eval_count || 0),
+            },
+            provider: 'ollama',
+            model: this.ollamaModel,
+        };
+    }
+
+    async _modelText(prompt, systemMessage) {
+        if (this.provider === 'openai') {
+            return this._openAiText(prompt, systemMessage);
+        }
+
+        if (this.provider === 'ollama') {
+            return this._ollamaText(prompt, systemMessage);
+        }
+
+        return null;
+    }
+
     async explainFormula({ formula, context = {} }) {
         if (!formula) {
             throw new Error('formula is required');
@@ -89,7 +146,7 @@ class AIService {
         try {
             const prompt = `Explain this Excel formula in plain language for a business user.\nFormula: ${formula}\nContext: ${JSON.stringify(context)}`;
             const system = 'You explain spreadsheet formulas clearly and concisely.';
-            const aiResponse = await this._openAiText(prompt, system);
+            const aiResponse = await this._modelText(prompt, system);
 
             if (aiResponse?.text) {
                 return {
@@ -134,7 +191,7 @@ class AIService {
             ].join('\n\n');
 
             const system = 'You are a spreadsheet assistant for collaborative workbook editing.';
-            const aiResponse = await this._openAiText(aiPrompt, system);
+            const aiResponse = await this._modelText(aiPrompt, system);
 
             if (aiResponse?.text) {
                 return {

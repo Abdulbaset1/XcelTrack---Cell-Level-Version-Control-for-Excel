@@ -33,7 +33,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [accountCreated, setAccountCreated] = useState(false);
 
-  const { signup, login, loginWithGoogle, loginWithGithub } = useAuth();
+  const { signup, loginWithGoogle, loginWithGithub } = useAuth();
 
   const navigate = useNavigate();
 
@@ -167,28 +167,6 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
     }
   };
 
-  const handleTestLogin = async () => {
-    setError('');
-    setIsLoading(true);
-    const testEmail = 'test@xceltrack.com';
-    const testPassword = 'password123';
-
-    try {
-      // Try to login first
-      await login(testEmail, testPassword);
-      navigate('/dashboard');
-    } catch (err) {
-      // If login fails, try to signup
-      try {
-        await signup('Test User', testEmail, testPassword);
-        navigate('/dashboard');
-      } catch (signupErr) {
-        setError('Failed to create test account. Please try manually.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleVerifyOTP = async (otp: string): Promise<boolean> => {
     try {
@@ -445,17 +423,6 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
         >
           {isLoading ? 'Sending verification code...' : 'Sign Up'}
         </button>
-
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={handleTestLogin}
-            disabled={isLoading}
-            className="w-full py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg bg-green-600/80 text-white hover:bg-green-700/80 hover:shadow-xl border border-green-400/30"
-          >
-            Test Login (No Password)
-          </button>
-        </div>
 
         <p className="text-sm text-blue-200 mt-6 text-center">
           Already have an account?{' '}

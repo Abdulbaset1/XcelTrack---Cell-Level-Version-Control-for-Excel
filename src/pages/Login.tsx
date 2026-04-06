@@ -57,7 +57,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
     return email.trim() !== '' && password.trim() !== '' && Object.values(errors).every(err => err === '');
   };
 
-  const { login, loginWithGoogle, loginWithGithub, resetPassword, signup } = useAuth();
+  const { login, loginWithGoogle, loginWithGithub, resetPassword } = useAuth();
 
   const navigate = useNavigate();
 
@@ -84,70 +84,6 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
     }
   };
 
-  const handleTestLogin = async () => {
-    setError('');
-    setMessage('');
-    setIsLoading(true);
-    const testEmail = 'test@xceltrack.com';
-    const testPassword = 'password123';
-
-    try {
-      // Try to login first
-      await login(testEmail, testPassword);
-      navigate('/dashboard');
-    } catch (err) {
-      // If login fails, try to signup
-      try {
-        await signup('Test User', testEmail, testPassword);
-        navigate('/dashboard');
-      } catch (signupErr) {
-        setError('Failed to create test account. Please try manually.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAdminLogin = async () => {
-    setError('');
-    setMessage('');
-    setIsLoading(true);
-    const adminEmail = 'admin@xceltrack.com';
-    const adminPassword = 'admin123';
-
-    try {
-      // Try to login first
-      const user = await login(adminEmail, adminPassword);
-      navigate('/admin');
-    } catch (err) {
-      // If login fails, create the admin account via backend API, then retry
-      try {
-        const createRes = await fetch('http://localhost:5000/api/admin/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: adminEmail,
-            password: adminPassword,
-            name: 'Admin',
-            role: 'admin',
-          }),
-        });
-
-        if (!createRes.ok) {
-          const data = await createRes.json();
-          throw new Error(data.error || 'Failed to create admin account');
-        }
-
-        // Now login with the newly created admin account
-        const user = await login(adminEmail, adminPassword);
-        navigate('/admin');
-      } catch (createErr: any) {
-        setError(`Admin login failed: ${createErr.message || 'Could not create or login as admin.'}`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-md">
@@ -290,28 +226,6 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
       >
         {isLoading ? 'Signing In...' : 'Sign In'}
       </button>
-
-      <div className="mt-4">
-        <button
-          type="button"
-          onClick={handleTestLogin}
-          disabled={isLoading}
-          className="w-full py-3 px-6 rounded-xl font-bold uppercase tracking-wider transition-all duration-200 transform shadow-lg bg-green-600/80 text-white hover:bg-green-700/80 hover:scale-105 active:scale-95 border border-green-400/30"
-        >
-          Test Login (No Password)
-        </button>
-      </div>
-
-      <div className="mt-3">
-        <button
-          type="button"
-          onClick={handleAdminLogin}
-          disabled={isLoading}
-          className="w-full py-3 px-6 rounded-xl font-bold uppercase tracking-wider transition-all duration-200 transform shadow-lg bg-amber-600/80 text-white hover:bg-amber-700/80 hover:scale-105 active:scale-95 border border-amber-400/30"
-        >
-          🔑 Login as Admin (Testing)
-        </button>
-      </div>
 
       <div className="text-center mt-4">
         <button

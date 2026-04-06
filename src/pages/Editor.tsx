@@ -32,7 +32,7 @@ const Editor: React.FC = () => {
   const { user } = useAuth();
   const { settings } = useSettings();
   const { showToast } = useToast();
-  const { joinWorkbook, leaveWorkbook, sendCursorMove, sendCellEdit, activeUsers, cursors, onCellChange, onConflict, onConflictResolved, onCellEditRejected, onCellEditAccepted } = useWebSocket();
+  const { joinWorkbook, leaveWorkbook, sendCursorMove, sendCellEdit, activeUsers, cursors, onCellChange, onConflict, onConflictResolved, onCellEditRejected, onCellEditAccepted, onWorkbookRenamed } = useWebSocket();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [workbookData, setWorkbookData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -261,6 +261,24 @@ const Editor: React.FC = () => {
       }
     });
   }, [id, onCellEditAccepted]);
+
+  // Listen for workbook rename events (propagate filename changes to active collaborators)
+  useEffect(() => {
+    if (!id) return;
+    onWorkbookRenamed((data) => {
+      if (!data || Number(data.workbookId) !== Number(id)) return;
+
+      setWorkbookData((prev: any) => {
+        if (!prev) return prev;
+        return { ...prev, name: data.name };
+      });
+
+      if (data.name) {
+        document.title = `${data.name} | XcelTrack`;
+      }
+      showToast(`Workbook renamed to "${data.name}"`, 'info');
+    });
+  }, [id, onWorkbookRenamed, showToast]);
 
   // Listen for real-time conflicts from other users
   useEffect(() => {
