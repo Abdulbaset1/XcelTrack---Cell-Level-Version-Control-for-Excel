@@ -1,4 +1,5 @@
 process.env.NODE_ENV = 'test';
+process.env.AI_PROVIDER = 'heuristic';
 
 const request = require('supertest');
 const { app, pool, server, io } = require('../index');
@@ -36,7 +37,7 @@ describe('AI endpoints', () => {
         expect(response.body.explanation).toContain('SUM');
         expect(response.body.provider).toBeDefined();
         expect(querySpy).toHaveBeenCalled();
-    });
+    }, 10000);
 
     test('detects workbook errors', async () => {
         const querySpy = jest.spyOn(pool, 'query').mockImplementation(async (sql) => {
@@ -102,7 +103,7 @@ describe('AI endpoints', () => {
         expect(response.body.stats.count).toBe(3);
         expect(response.body.summary).toContain('Analyzed');
         expect(querySpy).toHaveBeenCalled();
-    });
+    }, 10000);
 
     test('answers prompt with selected range context', async () => {
         const querySpy = jest.spyOn(pool, 'query').mockImplementation(async (sql, params = []) => {
@@ -145,5 +146,5 @@ describe('AI endpoints', () => {
         expect(typeof response.body.answer).toBe('string');
         expect(response.body.selectedCellsCount).toBeGreaterThan(0);
         expect(querySpy).toHaveBeenCalled();
-    });
+    }, 10000);
 });

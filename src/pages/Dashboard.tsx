@@ -301,7 +301,6 @@ const Dashboard: React.FC = () => {
       setIsAddingCollaborator(true);
       await addWorkbookCollaborator(selectedFileForShare.id, user.uid, collaboratorId);
       showToast('Collaborator added successfully', 'success');
-      
       setCollaboratorQuery('');
       await fetchFiles();
       await fetchWorkbookCollaborators(selectedFileForShare.id);
