@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaDownload } from 'react-icons/fa';
-import { getAdminAnalytics, AdminAnalytics } from '../services/api';
+import { getAdminAnalytics, AdminAnalytics, API_URL } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 const AnalyticsPage: React.FC = () => {
@@ -145,7 +145,7 @@ const AnalyticsPage: React.FC = () => {
                             <button
                                 onClick={() => {
                                     if (!user?.uid) return;
-                                    window.location.href = `http://localhost:5000/api/admin/audit-logs/export?requester_id=${user.uid}`;
+                                    window.location.href = `${API_URL}/admin/audit-logs/export?requester_id=${user.uid}`;
                                 }}
                                 disabled={loading}
                                 style={{

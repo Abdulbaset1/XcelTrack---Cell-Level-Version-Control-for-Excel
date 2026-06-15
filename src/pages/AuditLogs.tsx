@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaSearch, FaDownload, FaFileExport, FaListAlt, FaTimes, FaShieldAlt, FaCheckCircle, FaExclamationTriangle, FaChartBar } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
-import { getAuditLogs, getAuditLogsExportUrl } from '../services/api';
+import { getAuditLogs, getAuditLogsExportUrl, API_URL } from '../services/api';
 
 // file: component for FR9.2 and FR9.5
 
@@ -43,7 +43,7 @@ const AuditLogsPage: React.FC = () => {
     const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
     const [isExporting, setIsExporting] = useState(false);
 
-    const API_BASE_URL = 'http://localhost:5000/api';
+    const API_BASE_URL = API_URL;
 
     const fetchLogs = useCallback(async () => {
         if (!user?.uid) return;

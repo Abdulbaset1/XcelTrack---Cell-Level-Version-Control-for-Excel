@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, googleProvider, githubProvider, db } from '../firebase';
+import { API_URL } from '../services/api';
 
 // Export the User interface so other files can use it
 export interface User {
@@ -60,7 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/sync-user', {
+      const response = await fetch(`${API_URL}/sync-user`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -113,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Fetch role from PostgreSQL backend (source of truth)
         try {
-          const roleResponse = await fetch(`http://localhost:5000/api/user-role/${firebaseUser.uid}`);
+          const roleResponse = await fetch(`${API_URL}/user-role/${firebaseUser.uid}`);
           if (roleResponse.ok) {
             const roleData = await roleResponse.json();
             userData.role = roleData.role;
@@ -168,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let role = 'User'; // Default
     try {
       console.log(`Fetching role for UID: ${firebaseUser.uid}`);
-      const roleResponse = await fetch(`http://localhost:5000/api/user-role/${firebaseUser.uid}`);
+      const roleResponse = await fetch(`${API_URL}/user-role/${firebaseUser.uid}`);
       console.log('Role fetch status:', roleResponse.status);
 
       if (roleResponse.ok) {
@@ -259,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       // Fetch existing role if not new
       try {
-        const roleResponse = await fetch(`http://localhost:5000/api/user-role/${user.uid}`);
+        const roleResponse = await fetch(`${API_URL}/user-role/${user.uid}`);
         if (roleResponse.ok) {
           const roleData = await roleResponse.json();
           role = roleData.role;
@@ -312,7 +313,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       // Fetch existing role if not new
       try {
-        const roleResponse = await fetch(`http://localhost:5000/api/user-role/${user.uid}`);
+        const roleResponse = await fetch(`${API_URL}/user-role/${user.uid}`);
         if (roleResponse.ok) {
           const roleData = await roleResponse.json();
           role = roleData.role;

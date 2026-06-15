@@ -106,7 +106,7 @@ interface WebSocketProviderProps {
 
 export const WebSocketProvider: React.FC<WebSocketProviderProps> = ({
     children,
-    serverUrl = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000',
+    serverUrl = process.env.REACT_APP_SOCKET_URL || 'https://xceltrack.onrender.com',
 }) => {
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);

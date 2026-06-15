@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import OTPModal from '../components/OTPModal';
+import { API_URL } from '../services/api';
 
 interface SignupProps {
   onSwitchToLogin: () => void;
@@ -144,7 +145,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
 
     try {
       // Step 1: Send OTP to email
-      const response = await fetch('http://localhost:5000/api/send-otp', {
+      const response = await fetch(`${API_URL}/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -171,7 +172,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
   const handleVerifyOTP = async (otp: string): Promise<boolean> => {
     try {
       // Verify OTP with backend
-      const response = await fetch('http://localhost:5000/api/verify-otp', {
+      const response = await fetch(`${API_URL}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -208,7 +209,7 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
 
   const handleResendOTP = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/send-otp', {
+      const response = await fetch(`${API_URL}/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
