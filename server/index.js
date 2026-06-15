@@ -35,6 +35,13 @@ const port = process.env.PORT || 5000;
 const http = require('http');
 const server = http.createServer(app);
 
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        message: 'XcelTrack API is running'
+    });
+});
 // Initialize Socket.io
 const { Server } = require('socket.io');
 const io = new Server(server, {
