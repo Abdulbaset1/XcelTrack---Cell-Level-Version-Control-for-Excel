@@ -356,7 +356,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const base64 = reader.result as string;
       await setDoc(doc(db, 'users', auth.currentUser!.uid), { photoBase64: base64 }, { merge: true });
       // Update local state is tricky without a re-fetch or manual set, but the listener might pick it up if we listen to the doc.
-      // For now, simple fire-and-forget or partial update if we had access to setUser.
+      // For now, simple fire-and-forget or partial update if we had access to the user.
     };
     reader.readAsDataURL(file);
   };
