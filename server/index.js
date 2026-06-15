@@ -100,6 +100,9 @@ const transporter = nodemailer.createTransport({
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD,
     },
+    connectionTimeout: 5000, // 5 seconds
+    greetingTimeout: 5000,   // 5 seconds
+    socketTimeout: 5000,     // 5 seconds
 });
 
 // Test DB Connection
@@ -796,67 +799,98 @@ app.post('/api/send-otp', otpLimiter, async (req, res) => {
             [email, otp, expiresAt]
         );
 
-        // Send email
-        const mailOptions = {
-            from: process.env.EMAIL_FROM || 'XcelTrack <noreply@xceltrack.com>',
-            to: email,
-            subject: 'Verify Your XcelTrack Account - OTP Code',
-            html: `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <style>
-                        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                        .header { background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-                        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
-                        .otp-box { background: white; border: 2px solid #3b82f6; border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0; }
-                        .otp-code { font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #3b82f6; }
-                        .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 5px; }
-                        .footer { text-align: center; color: #6b7280; font-size: 12px; margin-top: 20px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="header">
-                            <h1>Welcome to XcelTrack!</h1>
-                        </div>
-                        <div class="content">
-                            <p>Hi <strong>${name}</strong>,</p>
-                            <p>Thank you for signing up! To complete your registration, please verify your email address using the OTP code below:</p>
-                            
-                            <div class="otp-box">
-                                <div style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your OTP Code</div>
-                                <div class="otp-code">${otp}</div>
-                                <div style="color: #6b7280; font-size: 12px; margin-top: 10px;">Valid for 10 minutes</div>
+        console.log(`[OTP Verification] Generated code for ${email}: ${otp}`);
+
+        let emailSent = false;
+        
+        // Only attempt to send if SMTP credentials are set
+        if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+            try {
+                // Send email
+                const mailOptions = {
+                    from: process.env.EMAIL_FROM || 'XcelTrack <noreply@xceltrack.com>',
+                    to: email,
+                    subject: 'Verify Your XcelTrack Account - OTP Code',
+                    html: `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <style>
+                                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                                .header { background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                                .content { background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px; }
+                                .otp-box { background: white; border: 2px solid #3b82f6; border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0; }
+                                .otp-code { font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #3b82f6; }
+                                .warning { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 5px; }
+                                .footer { text-align: center; color: #6b7280; font-size: 12px; margin-top: 20px; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="container">
+                                <div class="header">
+                                    <h1>Welcome to XcelTrack!</h1>
+                                </div>
+                                <div class="content">
+                                    <p>Hi <strong>${name}</strong>,</p>
+                                    <p>Thank you for signing up! To complete your registration, please verify your email address using the OTP code below:</p>
+                                    
+                                    <div class="otp-box">
+                                        <div style="color: #6b7280; font-size: 14px; margin-bottom: 10px;">Your OTP Code</div>
+                                        <div class="otp-code">${otp}</div>
+                                        <div style="color: #6b7280; font-size: 12px; margin-top: 10px;">Valid for 10 minutes</div>
+                                    </div>
+
+                                    <div class="warning">
+                                        <strong>⚠️ Security Notice:</strong> Never share this code with anyone. XcelTrack will never ask for your OTP via phone or email.
+                                    </div>
+
+                                    <p>If you didn't request this code, please ignore this email.</p>
+                                    
+                                    <p>Best regards,<br><strong>The XcelTrack Team</strong></p>
+                                </div>
+                                <div class="footer">
+                                    <p>This is an automated message, please do not reply.</p>
+                                    <p>&copy; 2025 XcelTrack. All rights reserved.</p>
+                                </div>
                             </div>
+                        </body>
+                        </html>
+                    `
+                };
 
-                            <div class="warning">
-                                <strong>⚠️ Security Notice:</strong> Never share this code with anyone. XcelTrack will never ask for your OTP via phone or email.
-                            </div>
+                await transporter.sendMail(mailOptions);
+                emailSent = true;
+                console.log(`[OTP Verification] Email sent successfully to ${email}`);
+            } catch (mailError) {
+                console.error('[OTP Verification] Failed to send SMTP email:', mailError.message);
+            }
+        } else {
+            console.log('[OTP Verification] SMTP credentials not set. Skipping email dispatch.');
+        }
 
-                            <p>If you didn't request this code, please ignore this email.</p>
-                            
-                            <p>Best regards,<br><strong>The XcelTrack Team</strong></p>
-                        </div>
-                        <div class="footer">
-                            <p>This is an automated message, please do not reply.</p>
-                            <p>&copy; 2025 XcelTrack. All rights reserved.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `
-        };
+        if (!emailSent) {
+            const allowFallback = process.env.BYPASS_EMAIL_OTP === 'true' || 
+                                  process.env.NODE_ENV === 'development' || 
+                                  !process.env.EMAIL_USER || 
+                                  !process.env.EMAIL_PASSWORD;
+            
+            if (allowFallback) {
+                console.log(`[OTP Verification] Falling back. Returning OTP in response: ${otp}`);
+                return res.json({ 
+                    message: 'OTP generated (Email delivery bypassed or failed. Check logs.)', 
+                    otp 
+                });
+            } else {
+                return res.status(500).json({ error: 'Failed to send OTP verification email.' });
+            }
+        }
 
-        await transporter.sendMail(mailOptions);
-
-        console.log(`OTP sent to ${email}: ${otp}`); // For development - remove in production
         res.json({ message: 'OTP sent successfully' });
 
     } catch (error) {
-        console.error('Error sending OTP:', error);
-        res.status(500).json({ error: 'Failed to send OTP. Please try again.' });
+        console.error('Error generating/sending OTP:', error);
+        res.status(500).json({ error: 'Failed to process OTP. Please try again.' });
     }
 });
 

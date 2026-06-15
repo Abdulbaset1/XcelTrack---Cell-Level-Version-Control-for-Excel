@@ -154,9 +154,15 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
         })
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Failed to send OTP');
+      }
+
+      if (data.otp) {
+        console.log(`[Development Fallback] OTP code: ${data.otp}`);
+        alert(`[Development Mode] Email delivery bypassed or failed. Your OTP code is: ${data.otp}`);
       }
 
       // Step 2: Show OTP modal
@@ -218,9 +224,15 @@ const Signup: React.FC<SignupProps> = ({ onSwitchToLogin }) => {
         })
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || 'Failed to resend OTP');
+      }
+
+      if (data.otp) {
+        console.log(`[Development Fallback] Resent OTP code: ${data.otp}`);
+        alert(`[Development Mode] Email delivery bypassed or failed. Your resent OTP code is: ${data.otp}`);
       }
     } catch (err: any) {
       throw new Error(err.message || 'Failed to resend OTP');
