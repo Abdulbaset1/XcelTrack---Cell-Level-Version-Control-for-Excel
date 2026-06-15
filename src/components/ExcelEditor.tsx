@@ -78,6 +78,9 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
             return;
         }
 
+        // Capture the DOM node now — containerRef.current will be null during cleanup
+        const container = containerRef.current;
+
         let univer: Univer;
         let fUniver: any;
 
@@ -327,7 +330,7 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
                     }
                 }
             };
-            containerRef.current!.addEventListener('dblclick', onCanvasDblClick);
+            container.addEventListener('dblclick', onCanvasDblClick);
 
             // Window keydown → if a printable key is pressed while a cell is selected and
             // the user is NOT already typing in an input/textarea, directly update
@@ -370,7 +373,7 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
             }, 300);
 
             return () => {
-                try { containerRef.current?.removeEventListener('dblclick', onCanvasDblClick); } catch (e) { }
+                try { container.removeEventListener('dblclick', onCanvasDblClick); } catch (e) { }
                 try { window.removeEventListener('keydown', onWindowKeyDown); } catch (e) { }
                 try { selectionSub.dispose(); } catch (e) { }
                 try { commandSub.dispose(); } catch (e) { }
@@ -430,7 +433,6 @@ const ExcelEditor = React.forwardRef<ExcelEditorRef, ExcelEditorProps>(({
                 if (!range) return;
 
                 if (format.bold !== undefined) {
-                    const currentStyle = range.getTextStyle();
                     range.setTextStyle({ bl: format.bold ? 1 : 0 });
                 }
                 if (format.italic !== undefined) {

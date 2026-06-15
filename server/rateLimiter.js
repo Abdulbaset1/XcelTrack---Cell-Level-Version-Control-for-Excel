@@ -1,9 +1,9 @@
 const rateLimit = require('express-rate-limit');
 
-// General API rate limiter - 100 requests per 15 minutes
+// General API rate limiter - 1000 requests per 15 minutes (more suitable for real-time/dashboard apps)
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100,
+    max: 1000,
     message: {
         error: 'Too many requests from this IP, please try again after 15 minutes',
     },
@@ -11,10 +11,10 @@ const generalLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Authentication rate limiter - 5 requests per 15 minutes
+// Authentication rate limiter - 15 requests per 15 minutes
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5,
+    max: 15,
     message: {
         error: 'Too many authentication attempts, please try again after 15 minutes',
     },
@@ -23,10 +23,10 @@ const authLimiter = rateLimit({
     skipSuccessfulRequests: true, // Don't count successful requests
 });
 
-// OTP rate limiter - 3 requests per 15 minutes
+// OTP rate limiter - 5 requests per 15 minutes
 const otpLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 3,
+    max: 5,
     message: {
         error: 'Too many OTP requests, please try again after 15 minutes',
     },
@@ -34,10 +34,10 @@ const otpLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// File upload rate limiter - 10 requests per hour
+// File upload rate limiter - 30 requests per hour
 const uploadLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
-    max: 10,
+    max: 30,
     message: {
         error: 'Too many file uploads, please try again after 1 hour',
     },
@@ -45,10 +45,10 @@ const uploadLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Admin operations rate limiter - 50 requests per 15 minutes
+// Admin operations rate limiter - 200 requests per 15 minutes
 const adminLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 50,
+    max: 200,
     message: {
         error: 'Too many admin requests, please try again after 15 minutes',
     },
@@ -56,10 +56,10 @@ const adminLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Commit creation rate limiter - 30 requests per 15 minutes
+// Commit creation rate limiter - 150 requests per 15 minutes
 const commitLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 30,
+    max: 150,
     message: {
         error: 'Too many commit requests, please try again after 15 minutes',
     },
@@ -67,10 +67,10 @@ const commitLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// AI endpoints rate limiter - 20 requests per 15 minutes
+// AI endpoints rate limiter - 100 requests per 15 minutes
 const aiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20,
+    max: 100,
     message: {
         error: 'Too many AI requests, please try again after 15 minutes',
     },

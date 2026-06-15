@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FiCheck, FiAlertCircle, FiShield, FiLock } from 'react-icons/fi';
+import { FiCheck, FiShield, FiLock } from 'react-icons/fi';
 
 interface ConflictItem {
     cellKey: string;       // Unique ID like "sheet-01:0:0"

@@ -1,9 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ProfileCard from '../components/ProfileCard';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { getProfileSummary, updateProfileDetails } from '../services/api';
+
+// Pure helpers — defined outside the component so they never change references
+const formatBytes = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+};
+
+const formatRelativeTime = (timestamp: string) => {
+    const t = new Date(timestamp).getTime();
+    if (!Number.isFinite(t)) return 'Just now';
+    const diffMs = Date.now() - t;
+    const diffMin = Math.max(1, Math.floor(diffMs / 60000));
+    if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `${diffH} hour${diffH === 1 ? '' : 's'} ago`;
+    const diffD = Math.floor(diffH / 24);
+    if (diffD < 7) return `${diffD} day${diffD === 1 ? '' : 's'} ago`;
+    const diffW = Math.floor(diffD / 7);
+    return `${diffW} week${diffW === 1 ? '' : 's'} ago`;
+};
+
 
 const Profile: React.FC = () => {
     const navigate = useNavigate();
@@ -45,33 +73,8 @@ const Profile: React.FC = () => {
 
     const [recentActivity, setRecentActivity] = useState<Array<{ id: number; action: string; file: string; time: string }>>([]);
 
-    const formatBytes = (bytes: number) => {
-        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        let value = bytes;
-        let unitIndex = 0;
-        while (value >= 1024 && unitIndex < units.length - 1) {
-            value /= 1024;
-            unitIndex += 1;
-        }
-        return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
-    };
 
-    const formatRelativeTime = (timestamp: string) => {
-        const t = new Date(timestamp).getTime();
-        if (!Number.isFinite(t)) return 'Just now';
-        const diffMs = Date.now() - t;
-        const diffMin = Math.max(1, Math.floor(diffMs / 60000));
-        if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
-        const diffH = Math.floor(diffMin / 60);
-        if (diffH < 24) return `${diffH} hour${diffH === 1 ? '' : 's'} ago`;
-        const diffD = Math.floor(diffH / 24);
-        if (diffD < 7) return `${diffD} day${diffD === 1 ? '' : 's'} ago`;
-        const diffW = Math.floor(diffD / 7);
-        return `${diffW} week${diffW === 1 ? '' : 's'} ago`;
-    };
-
-    const fetchLiveProfileData = async () => {
+    const fetchLiveProfileData = useCallback(async () => {
         if (!user?.uid) return;
 
         setIsLoadingProfileData(true);
@@ -109,7 +112,7 @@ const Profile: React.FC = () => {
         } finally {
             setIsLoadingProfileData(false);
         }
-    };
+    }, [user?.uid, showToast]);
 
     useEffect(() => {
         if (!user?.uid) return;
@@ -117,7 +120,7 @@ const Profile: React.FC = () => {
         fetchLiveProfileData();
         const intervalId = window.setInterval(fetchLiveProfileData, 30000);
         return () => window.clearInterval(intervalId);
-    }, [user?.uid]);
+    }, [user?.uid, fetchLiveProfileData]);
 
     const handleSaveProfile = async () => {
         if (!user?.uid) return;

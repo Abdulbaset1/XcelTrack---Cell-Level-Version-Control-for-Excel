@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaDownload } from 'react-icons/fa';
-import { getAdminAnalytics, AdminAnalytics, AuditLog } from '../services/api';
+import { getAdminAnalytics, AdminAnalytics } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 const AnalyticsPage: React.FC = () => {

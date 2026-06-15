@@ -57,7 +57,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToSignup }) => {
     return email.trim() !== '' && password.trim() !== '' && Object.values(errors).every(err => err === '');
   };
 
-  const { login, loginWithGoogle, loginWithGithub, resetPassword, signup } = useAuth();
+  const { login, loginWithGoogle, loginWithGithub, resetPassword } = useAuth();
 
   const navigate = useNavigate();
 

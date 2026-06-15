@@ -138,7 +138,7 @@ const Dashboard: React.FC = () => {
       fetchFiles();
       fetchRecentActivity();
       fetchProfileStorage();
-    }, 10000);
+    }, 30000);
 
     return () => {
       window.clearInterval(intervalId);
