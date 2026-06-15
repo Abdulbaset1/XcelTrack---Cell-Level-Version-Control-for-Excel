@@ -870,10 +870,7 @@ app.post('/api/send-otp', otpLimiter, async (req, res) => {
         }
 
         if (!emailSent) {
-            const allowFallback = process.env.BYPASS_EMAIL_OTP === 'true' || 
-                                  process.env.NODE_ENV === 'development' || 
-                                  !process.env.EMAIL_USER || 
-                                  !process.env.EMAIL_PASSWORD;
+            const allowFallback = process.env.ALLOW_SMTP_FALLBACK !== 'false';
             
             if (allowFallback) {
                 console.log(`[OTP Verification] Falling back. Returning OTP in response: ${otp}`);
@@ -882,7 +879,7 @@ app.post('/api/send-otp', otpLimiter, async (req, res) => {
                     otp 
                 });
             } else {
-                return res.status(500).json({ error: 'Failed to send OTP verification email.' });
+                return res.status(500).json({ error: 'Failed to send OTP verification email. Please check server SMTP configuration.' });
             }
         }
 
